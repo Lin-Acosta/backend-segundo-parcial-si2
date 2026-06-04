@@ -1,9 +1,9 @@
 from src.core.database import get_db
-from src.shared.dependencies import get_current_user
-from src.modules.emergencies.models import Incidente
-from src.modules.actors.models import Taller
+from src.modules.iam.dependencies import get_current_user
+from src.modules.operations.models import Incidente
+from src.modules.catalog.models import Taller
 from src.modules.operations.models import Cotizacion, Pago
-from src.modules.security.models import Usuario
+from src.modules.iam.models import Usuario
 from src.modules.operations.schemas import PagoOut
 from src.shared.notificacion_util import crear_notificacion
 

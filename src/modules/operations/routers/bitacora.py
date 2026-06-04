@@ -1,8 +1,8 @@
 from src.core.database import get_db
-from src.shared.dependencies import get_current_user
-from src.modules.actors.models import Mecanico, Taller
+from src.modules.iam.dependencies import get_current_user
+from src.modules.catalog.models import Mecanico, Taller
 from src.modules.operations.models import Bitacora
-from src.modules.security.models import Usuario
+from src.modules.iam.models import Usuario
 from src.modules.operations.schemas import BitacoraOut
 
 from fastapi import APIRouter, Depends, HTTPException, status

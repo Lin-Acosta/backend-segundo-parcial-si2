@@ -4,8 +4,9 @@ from typing import Dict, Tuple
 from src.core.database import Base, SessionLocal, engine
 from src.core.security import get_password_hash
 
-from src.modules.security.models import Permiso, Rol, Usuario, Tenant
-from src.modules.actors.models import (
+from src.modules.iam.models import Permiso, Rol, Usuario
+from src.modules.saas.models import Tenant
+from src.modules.catalog.models import (
     Administrador,
     Conductor,
     Mecanico,
@@ -14,13 +15,12 @@ from src.modules.actors.models import (
     Vehiculo,
     VehiculoConductor,
 )
-from src.modules.emergencies.models import (
+from src.modules.operations.models import (
     Evidencia,
     Incidente,
-    IncidenteMecanico,
     MensajeChat,
 )
-from src.modules.ai.models import AnalisisIA
+from src.modules.operations.models import AnalisisIA
 from src.modules.operations.models import Bitacora, Cotizacion, Notificacion, Pago
 
 

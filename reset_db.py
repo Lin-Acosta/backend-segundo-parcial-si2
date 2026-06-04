@@ -1,10 +1,10 @@
 import sys
 from src.core.database import Base, engine
-from src.modules.security.models import *
-from src.modules.actors.models import *
-from src.modules.emergencies.models import *
-from src.modules.operations.models import *
-from src.modules.ai.models import *
+from src.modules.saas.models import Tenant, PlanSaaS, Suscripcion
+from src.modules.iam.models import Usuario, Rol, Permiso
+from src.modules.catalog.models import Administrador, Conductor, Mecanico, Vehiculo, VehiculoConductor, Taller, ServicioTaller
+from src.modules.operations.models import Incidente, Evidencia, Cotizacion, Pago, Bitacora, Notificacion, MensajeChat, AnalisisIA
+
 def reset_db():
     print("Dropping all tables...")
     Base.metadata.drop_all(bind=engine)

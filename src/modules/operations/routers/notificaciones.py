@@ -1,5 +1,5 @@
 from src.core.database import get_db
-from src.shared.dependencies import get_current_user
+from src.modules.iam.dependencies import get_current_user
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -7,9 +7,9 @@ from typing import List
 from datetime import datetime
 
 from ..models import Notificacion
-from src.modules.security.models import Usuario
+from src.modules.iam.models import Usuario
 from ..schemas import NotificacionOut, NotificacionCreate
-from src.modules.security.schemas import FCMTokenUpdate
+from src.modules.iam.schemas import FCMTokenUpdate
 
 router = APIRouter(
     prefix="/notificaciones",

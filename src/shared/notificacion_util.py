@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from src.modules.operations.models import Notificacion
-from src.modules.security.models import Usuario
+from src.modules.iam.models import Usuario
 from datetime import datetime
 import os
 import json

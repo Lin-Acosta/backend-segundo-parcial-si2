@@ -30,3 +30,31 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+
+def require_admin(current_user: Usuario = Depends(get_current_user)):
+    """Dependencia que verifica que el usuario actual sea Administrador."""
+    if not current_user.rol or current_user.rol.Nombre != "Administrador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado. Se requieren permisos de Administrador."
+        )
+    return current_user
+
+from src.core.database import SessionLocal
+
+def verify_token_ws(token: str) -> Usuario | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        correo: str = payload.get("sub")
+        if correo is None:
+            return None
+    except JWTError:
+        return None
+    
+    db = SessionLocal()
+    try:
+        user = db.query(Usuario).filter(Usuario.Correo == correo).first()
+        return user
+    finally:
+        db.close()

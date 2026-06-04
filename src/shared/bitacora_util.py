@@ -1,7 +1,7 @@
 from datetime import date
 from sqlalchemy.orm import Session
 from src.modules.operations.models import Bitacora
-from src.modules.security.models import Usuario
+from src.modules.iam.models import Usuario
 
 
 def registrar_bitacora(
