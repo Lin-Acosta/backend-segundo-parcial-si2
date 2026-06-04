@@ -6,9 +6,11 @@ class Token(BaseModel):
     token_type: str
     role: Optional[str] = None
     permisos: Optional[List[str]] = []
+    tenant_id: Optional[int] = None
 
 class TokenData(BaseModel):
     correo: Optional[str] = None
+    tenant_id: Optional[int] = None
 
 class PasswordResetRequest(BaseModel):
     correo: str

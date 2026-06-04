@@ -39,7 +39,7 @@ def login_for_access_token(request: Request, form_data: Annotated[OAuth2Password
     # Crear token válido
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.Correo}, expires_delta=access_token_expires
+        data={"sub": user.Correo, "tenant_id": user.tenant_id}, expires_delta=access_token_expires
     )
     role_name = user.rol.Nombre if user.rol else None
     permisos_list = [p.Nombre for p in user.rol.permisos] if user.rol and user.rol.permisos else []
@@ -54,7 +54,8 @@ def login_for_access_token(request: Request, form_data: Annotated[OAuth2Password
         "access_token": access_token, 
         "token_type": "bearer", 
         "role": role_name,
-        "permisos": permisos_list
+        "permisos": permisos_list,
+        "tenant_id": user.tenant_id
     }
 
 # Ruta adicionada convenientemente para poder testear el login fácilmente

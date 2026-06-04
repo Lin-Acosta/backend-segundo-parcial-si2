@@ -32,7 +32,10 @@ def get_users(
     skip: int = 0, 
     limit: int = 100
 ):
-    users = db.query(Usuario).offset(skip).limit(limit).all()
+    query = db.query(Usuario)
+    if current_user.tenant_id is not None:
+        query = query.filter(Usuario.tenant_id == current_user.tenant_id)
+    users = query.offset(skip).limit(limit).all()
     return users
 
 @router.get("/roles", response_model=List[RolSchema])
@@ -64,7 +67,8 @@ def create_user(
     new_user = Usuario(
         Correo=user_data.Correo, 
         Password=hashed_password, 
-        IdRol=user_data.IdRol
+        IdRol=user_data.IdRol,
+        tenant_id=current_user.tenant_id
     )
     db.add(new_user)
     db.commit()
@@ -85,7 +89,10 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin)
 ):
-    db_user = db.query(Usuario).filter(Usuario.Id == user_id).first()
+    query = db.query(Usuario).filter(Usuario.Id == user_id)
+    if current_user.tenant_id is not None:
+        query = query.filter(Usuario.tenant_id == current_user.tenant_id)
+    db_user = query.first()
     if not db_user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
@@ -122,7 +129,10 @@ def delete_user(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin)
 ):
-    user = db.query(Usuario).filter(Usuario.Id == user_id).first()
+    query = db.query(Usuario).filter(Usuario.Id == user_id)
+    if current_user.tenant_id is not None:
+        query = query.filter(Usuario.tenant_id == current_user.tenant_id)
+    user = query.first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     

@@ -28,7 +28,9 @@ def get_mecanicos_by_taller(db: Session = Depends(get_db), current_user: Usuario
         return mecanicos
     elif current_user.rol and current_user.rol.Nombre == 'Administrador':
         # Es un admin root, devolver todos (opcional)
-        return db.query(Mecanico).all()
+        if current_user.tenant_id is None:
+            return db.query(Mecanico).all()
+        return db.query(Mecanico).filter(Mecanico.tenant_id == current_user.tenant_id).all()
     else:
         raise HTTPException(status_code=403, detail="No autorizado para visualizar mecánicos")
 
@@ -53,7 +55,7 @@ def create_mecanico(request: Request, mecanico_data: MecanicoRegistro, db: Sessi
 
     # Crear Usuario
     hashed_pass = get_password_hash(mecanico_data.password)
-    new_user = Usuario(Correo=mecanico_data.correo, Password=hashed_pass, IdRol=rol.Id)
+    new_user = Usuario(Correo=mecanico_data.correo, Password=hashed_pass, IdRol=rol.Id, tenant_id=current_user.tenant_id)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -66,7 +68,8 @@ def create_mecanico(request: Request, mecanico_data: MecanicoRegistro, db: Sessi
         nombre=mecanico_data.nombre,
         apellidos=mecanico_data.apellidos,
         fechanac=mecanico_data.fechanac,
-        taller_id=taller.Id
+        taller_id=taller.Id,
+        tenant_id=current_user.tenant_id
     )
     db.add(nuevo_mecanico)
     db.commit()

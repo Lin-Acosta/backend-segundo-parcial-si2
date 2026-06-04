@@ -4,7 +4,7 @@ from typing import Dict, Tuple
 from src.core.database import Base, SessionLocal, engine
 from src.core.security import get_password_hash
 
-from src.modules.security.models import Permiso, Rol, Usuario
+from src.modules.security.models import Permiso, Rol, Usuario, Tenant
 from src.modules.actors.models import (
     Administrador,
     Conductor,
@@ -60,8 +60,11 @@ def seed_roles_and_permissions(db) -> Dict[str, Rol]:
 
     return roles
 
+def seed_tenant(db) -> Tenant:
+    tenant, _ = get_or_create(db, Tenant, Nombre="Empresa Demo SaaS", SuscripcionActiva=1, Dominio="demo.saas.com")
+    return tenant
 
-def seed_users(db, roles: Dict[str, Rol]) -> Dict[str, Usuario]:
+def seed_users(db, roles: Dict[str, Rol], tenant: Tenant) -> Dict[str, Usuario]:
     users = {}
 
     seed_users_data = [
@@ -70,24 +73,28 @@ def seed_users(db, roles: Dict[str, Rol]) -> Dict[str, Usuario]:
             "Correo": "admin@demo.local",
             "Password": "Admin123!",
             "IdRol": roles["Administrador"].Id,
+            "tenant_id": None
         },
         {
             "key": "taller",
             "Correo": "taller@demo.local",
             "Password": "Taller123!",
             "IdRol": roles["Taller"].Id,
+            "tenant_id": tenant.Id
         },
         {
             "key": "conductor",
             "Correo": "conductor@demo.local",
             "Password": "Conductor123!",
             "IdRol": roles["Conductor"].Id,
+            "tenant_id": tenant.Id
         },
         {
             "key": "mecanico",
             "Correo": "mecanico@demo.local",
             "Password": "Mecanico123!",
             "IdRol": roles["Mecanico"].Id,
+            "tenant_id": tenant.Id
         },
     ]
 
@@ -97,7 +104,7 @@ def seed_users(db, roles: Dict[str, Rol]) -> Dict[str, Usuario]:
             users[data["key"]] = existing
             continue
         hashed = get_password_hash(data["Password"])
-        user = Usuario(Correo=data["Correo"], Password=hashed, IdRol=data["IdRol"])
+        user = Usuario(Correo=data["Correo"], Password=hashed, IdRol=data["IdRol"], tenant_id=data["tenant_id"])
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -106,7 +113,7 @@ def seed_users(db, roles: Dict[str, Rol]) -> Dict[str, Usuario]:
     return users
 
 
-def seed_profiles(db, users: Dict[str, Usuario]) -> Dict[str, Tuple]:
+def seed_profiles(db, users: Dict[str, Usuario], tenant: Tenant) -> Dict[str, Tuple]:
     # Administrador
     admin_user = users["admin"]
     admin_profile = db.query(Administrador).filter(Administrador.IdUsuario == admin_user.Id).first()
@@ -127,6 +134,7 @@ def seed_profiles(db, users: Dict[str, Usuario]) -> Dict[str, Tuple]:
             Cap=2,
             Capmax=5,
             balance=0,
+            tenant_id=tenant.Id,
         )
         db.add(taller)
         db.commit()
@@ -142,6 +150,7 @@ def seed_profiles(db, users: Dict[str, Usuario]) -> Dict[str, Tuple]:
             Nombre="Juan",
             Apellidos="Perez",
             Fechanac=datetime.date(1995, 1, 15),
+            tenant_id=tenant.Id,
         )
         db.add(conductor)
         db.commit()
@@ -160,6 +169,7 @@ def seed_profiles(db, users: Dict[str, Usuario]) -> Dict[str, Tuple]:
             fechanac=int(datetime.datetime(1990, 5, 20).timestamp() * 1000),
             estado="Disponible",
             taller_id=taller.Id,
+            tenant_id=tenant.Id,
         )
         db.add(mecanico)
         db.commit()
@@ -185,7 +195,7 @@ def seed_profiles(db, users: Dict[str, Usuario]) -> Dict[str, Tuple]:
     }
 
 
-def seed_vehiculos(db, conductor: Conductor) -> VehiculoConductor:
+def seed_vehiculos(db, conductor: Conductor, tenant: Tenant) -> VehiculoConductor:
     vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == "ABC-123").first()
     if not vehiculo:
         vehiculo = Vehiculo(
@@ -195,6 +205,7 @@ def seed_vehiculos(db, conductor: Conductor) -> VehiculoConductor:
             Poliza="POL-0001",
             Categoria="Sedan",
             Año=2020,
+            tenant_id=tenant.Id,
         )
         db.add(vehiculo)
         db.commit()
@@ -217,7 +228,7 @@ def seed_vehiculos(db, conductor: Conductor) -> VehiculoConductor:
     return relacion
 
 
-def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanico, conductor_user: Usuario):
+def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanico, conductor_user: Usuario, tenant: Tenant):
     fecha_pago = "2026-05-24 12:00:00"
     incidente_pagado = db.query(Incidente).filter(
         Incidente.vehiculoconductor_id == vc.id,
@@ -230,6 +241,7 @@ def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanic
             fecha=fecha_pago,
             vehiculoconductor_id=vc.id,
             taller_id=taller.Id,
+            tenant_id=tenant.Id,
         )
         db.add(incidente_pagado)
         db.commit()
@@ -275,6 +287,7 @@ def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanic
             fecha_creacion=fecha_pago,
             incidente_id=incidente_pagado.id,
             taller_id=taller.Id,
+            tenant_id=tenant.Id,
         )
         db.add(cotizacion)
         db.commit()
@@ -288,6 +301,7 @@ def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanic
             stripe_session_id=None,
             fecha=fecha_pago,
             incidente_id=incidente_pagado.id,
+            tenant_id=tenant.Id,
         )
         db.add(pago)
         db.commit()
@@ -319,6 +333,7 @@ def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanic
             fecha=fecha_pendiente,
             vehiculoconductor_id=vc.id,
             taller_id=None,
+            tenant_id=tenant.Id,
         )
         db.add(incidente_pendiente)
         db.commit()
@@ -338,7 +353,7 @@ def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanic
     return incidente_pagado, incidente_pendiente
 
 
-def seed_ops(db, admin_user: Usuario, conductor_user: Usuario):
+def seed_ops(db, admin_user: Usuario, conductor_user: Usuario, tenant: Tenant):
     bitacora = db.query(Bitacora).filter(
         Bitacora.usuario_id == admin_user.Id,
         Bitacora.accion == "Seeder",
@@ -350,6 +365,7 @@ def seed_ops(db, admin_user: Usuario, conductor_user: Usuario):
             fecha=datetime.date.today(),
             ip="127.0.0.1",
             usuario_id=admin_user.Id,
+            tenant_id=tenant.Id,
         )
         db.add(bitacora)
         db.commit()
@@ -365,6 +381,7 @@ def seed_ops(db, admin_user: Usuario, conductor_user: Usuario):
             fecha=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             titulo="Bienvenido",
             usuario_id=conductor_user.Id,
+            tenant_id=tenant.Id,
         )
         db.add(notificacion)
         db.commit()
@@ -374,12 +391,13 @@ def main():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        tenant = seed_tenant(db)
         roles = seed_roles_and_permissions(db)
-        users = seed_users(db, roles)
-        profiles = seed_profiles(db, users)
-        vc = seed_vehiculos(db, profiles["conductor"])
-        seed_incidentes(db, vc, profiles["taller"], profiles["mecanico"], users["conductor"])
-        seed_ops(db, users["admin"], users["conductor"])
+        users = seed_users(db, roles, tenant)
+        profiles = seed_profiles(db, users, tenant)
+        vc = seed_vehiculos(db, profiles["conductor"], tenant)
+        seed_incidentes(db, vc, profiles["taller"], profiles["mecanico"], users["conductor"], tenant)
+        seed_ops(db, users["admin"], users["conductor"], tenant)
     finally:
         db.close()
 

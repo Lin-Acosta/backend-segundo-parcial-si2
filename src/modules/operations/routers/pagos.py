@@ -87,7 +87,8 @@ def create_stripe_checkout(
             estado="Pendiente",
             stripe_session_id=session.id,
             fecha=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            incidente_id=incidente_id
+            incidente_id=incidente_id,
+            tenant_id=current_user.tenant_id
         )
         db.add(nuevo_pago)
         db.commit()
@@ -145,7 +146,8 @@ def pago_directo(
         metodo="Directo",
         estado="Pendiente Confirmación",
         fecha=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        incidente_id=incidente_id
+        incidente_id=incidente_id,
+        tenant_id=current_user.tenant_id
     )
     db.add(nuevo_pago)
     

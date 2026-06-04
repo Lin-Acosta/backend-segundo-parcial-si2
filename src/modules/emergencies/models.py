@@ -16,6 +16,7 @@ class Incidente(Base):
     fecha = Column(String(50))
     vehiculoconductor_id = Column(Integer, ForeignKey('VehiculoConductor.id', ondelete="CASCADE"), nullable=False)
     taller_id = Column(Integer, ForeignKey('Taller.Id', ondelete="SET NULL"), nullable=True)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     vehiculoconductor = relationship("VehiculoConductor", back_populates="incidentes")
     evidencias = relationship("Evidencia", back_populates="incidente", cascade="all, delete-orphan")

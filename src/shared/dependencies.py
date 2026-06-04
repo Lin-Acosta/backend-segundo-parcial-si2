@@ -19,9 +19,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         correo: str = payload.get("sub")
+        tenant_id: int = payload.get("tenant_id")
         if correo is None:
             raise credentials_exception
-        token_data = TokenData(correo=correo)
+        token_data = TokenData(correo=correo, tenant_id=tenant_id)
     except JWTError:
         raise credentials_exception
     

@@ -30,7 +30,7 @@ def registrar_vehiculo(
     # Comprobar si el vehículo ya existe en la base de datos por placa
     db_vehiculo = None
     if vehiculo.Placa:
-        db_vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == vehiculo.Placa).first()
+        db_vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == vehiculo.Placa, Vehiculo.tenant_id == current_user.tenant_id).first()
     
     if db_vehiculo:
         # El vehículo existe. Si este conductor no está entre sus dueños, lo agregamos.
@@ -46,6 +46,7 @@ def registrar_vehiculo(
     # Si no existe, creamos el vehículo
     # model_dump() es para Pydantic V2. Si arroja error en el futuro, cámbialo por dict()
     nuevo_vehiculo_data = vehiculo.model_dump() if hasattr(vehiculo, 'model_dump') else vehiculo.dict()
+    nuevo_vehiculo_data["tenant_id"] = current_user.tenant_id
     db_vehiculo = Vehiculo(**nuevo_vehiculo_data)
     db.add(db_vehiculo)
     db.commit()

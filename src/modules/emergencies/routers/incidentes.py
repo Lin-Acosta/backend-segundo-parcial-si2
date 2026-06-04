@@ -55,7 +55,7 @@ def solicitudes_pendientes(
             joinedload(Incidente.analisis_ia),
             joinedload(Incidente.cotizaciones)
         )
-        .filter(Incidente.estado == "Reportado")
+        .filter(Incidente.estado == "Reportado", Incidente.tenant_id == current_user.tenant_id)
         .order_by(Incidente.id.desc())
         .all()
     )
@@ -124,7 +124,8 @@ def reportar_incidente(
         coordenadagps=payload.coordenadagps,
         estado=payload.estado or "Reportado",
         fecha=payload.fecha or fecha_actual,
-        vehiculoconductor_id=vehiculo_conductor.id
+        vehiculoconductor_id=vehiculo_conductor.id,
+        tenant_id=current_user.tenant_id
     )
 
     db.add(nuevo_incidente)
@@ -355,7 +356,7 @@ def talleres_disponibles(
 ):
     """Lista talleres con capacidad disponible, ordenados por recomendación IA y cercanía si se proveen coordenadas."""
     from sqlalchemy.orm import joinedload as jl
-    talleres = db.query(Taller).options(jl(Taller.servicios)).all()
+    talleres = db.query(Taller).options(jl(Taller.servicios)).filter(Taller.tenant_id == current_user.tenant_id).all()
 
     ai_clasificacion = None
     if incidente_id:
@@ -610,7 +611,8 @@ def solicitar_cotizacion(
         incidente_id=incidente_id,
         taller_id=payload.taller_id,
         estado="Solicitada",
-        fecha_creacion=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fecha_creacion=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        tenant_id=current_user.tenant_id
     )
     db.add(nueva_cotizacion)
     db.commit()
@@ -637,7 +639,8 @@ def ofrecer_cotizacion(
         cotizacion = Cotizacion(
             incidente_id=incidente_id,
             taller_id=taller_id,
-            fecha_creacion=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            fecha_creacion=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            tenant_id=current_user.tenant_id
         )
         db.add(cotizacion)
 

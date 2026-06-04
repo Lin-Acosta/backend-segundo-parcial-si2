@@ -12,6 +12,7 @@ class Taller(Base):
     Cap = Column(Integer, default=0)
     Capmax = Column(Integer, default=10)
     IdUsuario = Column(Integer, ForeignKey('Usuario.Id'), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
     balance = Column(Integer, default=0)
 
     usuario = relationship("Usuario", back_populates="talleres")
@@ -46,6 +47,7 @@ class Conductor(Base):
     Nombre = Column(String(255), nullable=False)
     Apellidos = Column(String(255), nullable=False)
     Fechanac = Column(Date, nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario", back_populates="conductor")
     vehiculos = relationship("Vehiculo", secondary="VehiculoConductor", back_populates="conductores")
@@ -62,6 +64,7 @@ class Vehiculo(Base):
     Poliza = Column(String(100))
     Categoria = Column(String(100))
     Año = Column(Integer)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
     conductores = relationship("Conductor", secondary="VehiculoConductor", back_populates="vehiculos")
     vehiculo_conductores = relationship("VehiculoConductor", back_populates="vehiculo")
 
@@ -90,6 +93,7 @@ class Mecanico(Base):
     fechanac = Column(BigInteger)
     estado = Column(String(50), default="Disponible")
     taller_id = Column(Integer, ForeignKey('Taller.Id', ondelete="SET NULL"), nullable=True)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario", back_populates="mecanico")
     taller = relationship("Taller", back_populates="mecanicos")

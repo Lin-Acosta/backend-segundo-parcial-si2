@@ -9,6 +9,16 @@ rol_permiso_table = Table(
     Column('IdPermiso', Integer, ForeignKey('Permiso.Id'), primary_key=True)
 )
 
+class Tenant(Base):
+    __tablename__ = 'Tenant'
+    
+    Id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    Nombre = Column(String(255), nullable=False)
+    SuscripcionActiva = Column(Integer, default=1) # 1 = Activa, 0 = Inactiva
+    Dominio = Column(String(255), nullable=True)
+    
+    usuarios = relationship("Usuario", back_populates="tenant")
+
 class Permiso(Base):
     __tablename__ = 'Permiso'
 
@@ -35,8 +45,10 @@ class Usuario(Base):
     Correo = Column(String(255), nullable=False, unique=True, index=True)
     Password = Column(String(255), nullable=False)
     IdRol = Column(Integer, ForeignKey('Rol.Id'), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
     fcm_token = Column(String(255), nullable=True)
 
+    tenant = relationship("Tenant", back_populates="usuarios")
     rol = relationship("Rol", back_populates="usuarios")
     talleres = relationship("Taller", back_populates="usuario")
     administrador = relationship("Administrador", uselist=False, back_populates="usuario")

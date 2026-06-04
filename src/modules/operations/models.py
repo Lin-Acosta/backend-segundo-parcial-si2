@@ -12,6 +12,7 @@ class Cotizacion(Base):
     fecha_creacion = Column(String(50))
     incidente_id = Column(Integer, ForeignKey('Incidente.id', ondelete="CASCADE"), nullable=False)
     taller_id = Column(Integer, ForeignKey('Taller.Id', ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     incidente = relationship("Incidente", back_populates="cotizaciones")
     taller = relationship("Taller")
@@ -26,6 +27,7 @@ class Pago(Base):
     stripe_session_id = Column(String(255), nullable=True)
     fecha = Column(String(50))
     incidente_id = Column(Integer, ForeignKey('Incidente.id', ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     incidente = relationship("Incidente", back_populates="pagos")
 
@@ -38,6 +40,7 @@ class Bitacora(Base):
     fecha = Column(Date)
     ip = Column(String(255))
     usuario_id = Column(Integer, ForeignKey('Usuario.Id', ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario", back_populates="bitacoras")
 
@@ -50,5 +53,6 @@ class Notificacion(Base):
     fecha = Column(String(50))
     titulo = Column(String(255))
     usuario_id = Column(Integer, ForeignKey('Usuario.Id', ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario", back_populates="notificaciones")

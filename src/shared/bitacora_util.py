@@ -1,6 +1,7 @@
 from datetime import date
 from sqlalchemy.orm import Session
 from src.modules.operations.models import Bitacora
+from src.modules.security.models import Usuario
 
 
 def registrar_bitacora(
@@ -11,12 +12,16 @@ def registrar_bitacora(
     ip: str = "0.0.0.0"
 ):
     """Registra una entrada en la bitácora de actividades del sistema."""
+    usuario = db.query(Usuario).filter(Usuario.Id == usuario_id).first()
+    tenant_id = usuario.tenant_id if usuario else None
+
     entrada = Bitacora(
         accion=accion,
         descripcion=descripcion,
         fecha=date.today(),
         ip=ip,
-        usuario_id=usuario_id
+        usuario_id=usuario_id,
+        tenant_id=tenant_id
     )
     db.add(entrada)
     db.commit()

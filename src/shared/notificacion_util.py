@@ -65,12 +65,16 @@ def crear_notificacion(db: Session, usuario_id: int, titulo: str, descripcion: s
     """
     fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    usuario = db.query(Usuario).filter(Usuario.Id == usuario_id).first()
+    tenant_id = usuario.tenant_id if usuario else None
+
     nueva_notificacion = Notificacion(
         titulo=titulo,
         descripcion=descripcion,
         usuario_id=usuario_id,
         fecha=fecha_actual,
-        estado="No leída"
+        estado="No leída",
+        tenant_id=tenant_id
     )
 
     db.add(nueva_notificacion)
@@ -78,7 +82,6 @@ def crear_notificacion(db: Session, usuario_id: int, titulo: str, descripcion: s
     db.refresh(nueva_notificacion)
 
     # Enviar push si el usuario tiene token FCM registrado
-    usuario = db.query(Usuario).filter(Usuario.Id == usuario_id).first()
     if usuario and usuario.fcm_token:
         enviar_push_fcm(usuario.fcm_token, titulo, descripcion)
 

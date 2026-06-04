@@ -32,8 +32,12 @@ def get_bitacora(
 
     if role_name == "Administrador":
         # Admin ve todo
+        query = db.query(Bitacora)
+        if current_user.tenant_id is not None:
+            query = query.filter(Bitacora.tenant_id == current_user.tenant_id)
+
         entries = (
-            db.query(Bitacora)
+            query
             .order_by(Bitacora.id.desc())
             .offset(skip)
             .limit(limit)
