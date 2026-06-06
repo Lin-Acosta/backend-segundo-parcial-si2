@@ -8,9 +8,19 @@ from src.modules.iam.models import Usuario
 from src.modules.catalog.schemas import ServicioTallerCreate, ServicioTallerOut, TallerDisponible
 from src.modules.operations.schemas import AsignarMecanicos, AsignarTaller, Incidente as IncidenteSchema, IncidenteCreate, IncidenteDetalle, IncidentePendiente, MensajeChatCreate, MensajeChatOut
 from src.modules.operations.schemas import CotizacionCreate, CotizacionOfrecer, CotizacionOut
-from src.modules.operations.schemas import ReintentarAnalisisPayload
+from src.modules.operations.schemas import ReintentarAnalisisPayload, ActualizarEstadoIncidente
 from src.modules.operations.services.ai_service import analizar_incidente
 from src.shared.notificacion_util import crear_notificacion
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from src.broker.manager import manager
+import asyncio
+
+async def broadcast_ws_event(tenant_id: int | None, room_id: str, payload: dict):
+    if tenant_id is None:
+        await manager.broadcast_all_tenants(payload, room_id)
+    else:
+        await manager.broadcast(payload, tenant_id, room_id)
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -31,7 +41,7 @@ def solicitudes_pendientes(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Devuelve todos los incidentes con estado 'Reportado' para que los talleres puedan ofrecer cotización, con distancia calculada."""
+    """Devuelve todos los incidentes con estado 'pendiente' para que los talleres puedan ofrecer cotización, con distancia calculada."""
     # Validar que sea un taller
     if not current_user.talleres:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo talleres pueden ver solicitudes pendientes")
@@ -55,7 +65,7 @@ def solicitudes_pendientes(
             joinedload(Incidente.analisis_ia),
             joinedload(Incidente.cotizaciones)
         )
-        .filter(Incidente.estado == "Reportado", Incidente.tenant_id == current_user.tenant_id)
+        .filter(Incidente.estado == "pendiente", Incidente.tenant_id == current_user.tenant_id)
         .order_by(Incidente.id.desc())
         .all()
     )
@@ -100,6 +110,7 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 @router.post("/reportar", response_model=IncidenteSchema)
 def reportar_incidente(
     payload: IncidenteCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -122,7 +133,7 @@ def reportar_incidente(
     fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     nuevo_incidente = Incidente(
         coordenadagps=payload.coordenadagps,
-        estado=payload.estado or "Reportado",
+        estado=payload.estado or "pendiente",
         fecha=payload.fecha or fecha_actual,
         vehiculoconductor_id=vehiculo_conductor.id,
         tenant_id=current_user.tenant_id
@@ -231,6 +242,13 @@ def reportar_incidente(
             )
     except Exception as e_notif:
         print(f"[Notificación] Error al notificar talleres: {e_notif}")
+
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        "talleres",
+        {"action": "nuevo_incidente", "incidente_id": nuevo_incidente.id}
+    )
 
     return nuevo_incidente
 
@@ -506,6 +524,7 @@ def eliminar_servicio(
 def asignar_taller(
     incidente_id: int,
     payload: AsignarTaller,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -532,7 +551,7 @@ def asignar_taller(
 
     # Asignar taller y cambiar estado
     incidente.taller_id = payload.taller_id
-    incidente.estado = "Asignado"
+    incidente.estado = "taller asignado"
 
     # Incrementar la capacidad usada del taller
     if taller.Cap is not None:
@@ -541,12 +560,20 @@ def asignar_taller(
     db.commit()
     db.refresh(incidente)
 
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        "talleres",
+        {"action": "estado_actualizado", "incidente_id": incidente.id, "estado": incidente.estado}
+    )
+
     return incidente
 
 
 @router.patch("/{incidente_id}/cancelar", response_model=IncidenteDetalle)
 def cancelar_incidente(
     incidente_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -567,7 +594,7 @@ def cancelar_incidente(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado o no te pertenece")
 
     # Solo se puede cancelar si está en estado Reportado o Asignado
-    if incidente.estado not in ("Reportado", "Asignado"):
+    if incidente.estado not in ("pendiente", "taller asignado"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No se puede cancelar un incidente en estado '{incidente.estado}'. Solo se permiten cancelaciones en estado Reportado o Asignado."
@@ -579,9 +606,16 @@ def cancelar_incidente(
         if taller and taller.Cap is not None and taller.Cap > 0:
             taller.Cap = taller.Cap - 1
 
-    incidente.estado = "Cancelado"
+    incidente.estado = "cancelado"
     db.commit()
     db.refresh(incidente)
+
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        "talleres",
+        {"action": "estado_actualizado", "incidente_id": incidente.id, "estado": incidente.estado}
+    )
 
     return incidente
 
@@ -589,6 +623,7 @@ def cancelar_incidente(
 def solicitar_cotizacion(
     incidente_id: int,
     payload: CotizacionCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -617,12 +652,21 @@ def solicitar_cotizacion(
     db.add(nueva_cotizacion)
     db.commit()
     db.refresh(nueva_cotizacion)
+
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        "talleres",
+        {"action": "nueva_solicitud_cotizacion", "incidente_id": incidente_id, "taller_id": payload.taller_id}
+    )
+
     return nueva_cotizacion
 
 @router.post("/{incidente_id}/ofrecer-cotizacion", response_model=CotizacionOut)
 def ofrecer_cotizacion(
     incidente_id: int,
     payload: CotizacionOfrecer,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -663,11 +707,19 @@ def ofrecer_cotizacion(
     except Exception as e_notif:
         print(f"[Notificación] Error al notificar conductor: {e_notif}")
 
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        f"conductor_{conductor_user_id}",
+        {"action": "nueva_cotizacion", "incidente_id": incidente_id}
+    )
+
     return cotizacion
 
 @router.post("/cotizaciones/{cotizacion_id}/aceptar", response_model=IncidenteDetalle)
 def aceptar_cotizacion(
     cotizacion_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
@@ -696,7 +748,7 @@ def aceptar_cotizacion(
 
     # Asignar taller al incidente
     incidente.taller_id = cotizacion.taller_id
-    incidente.estado = "Asignado"
+    incidente.estado = "taller asignado"
 
     # Incrementar capacidad del taller
     taller = db.query(Taller).filter(Taller.Id == cotizacion.taller_id).first()
@@ -717,6 +769,13 @@ def aceptar_cotizacion(
         )
     except Exception as e_notif:
         print(f"[Notificación] Error al notificar taller: {e_notif}")
+
+    background_tasks.add_task(
+        broadcast_ws_event,
+        current_user.tenant_id,
+        "talleres",
+        {"action": "estado_actualizado", "incidente_id": incidente.id}
+    )
 
     # Recargar con relaciones para la respuesta
     return db.query(Incidente).options(
@@ -765,7 +824,7 @@ def mantenimientos_taller(
         joinedload(Incidente.pagos)
     ).filter(
         Incidente.taller_id == taller_id,
-        Incidente.estado.in_(["Asignado", "En Camino", "Resuelto", "Pagado"])
+        Incidente.estado.in_(["taller asignado", "en camino", "finalizado", "finalizado"])
     )
 
     # Si es mecánico, solo ver los que le fueron asignados
@@ -865,11 +924,11 @@ def actualizar_estado_mantenimiento(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado o no asignado a tu taller")
 
-    if payload.estado not in ["En Camino", "Resuelto"]:
+    if payload.estado not in ["en camino", "finalizado"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado no válido")
 
     # Si se marca como Resuelto, liberamos cupo del taller
-    if payload.estado == "Resuelto" and incidente.estado != "Resuelto":
+    if payload.estado == "finalizado" and incidente.estado != "finalizado":
         taller = db.query(Taller).filter(Taller.Id == taller_id).first()
         if taller and taller.Cap is not None and taller.Cap > 0:
             taller.Cap -= 1
@@ -882,7 +941,7 @@ def actualizar_estado_mantenimiento(
     try:
         conductor_user_id = incidente.vehiculoconductor.conductor.IdUsuario
         msg = f"Tu vehículo ahora está en estado: {payload.estado}."
-        if payload.estado == "Resuelto":
+        if payload.estado == "finalizado":
             msg = "¡Tu vehículo ha sido reparado! Ya puedes pasar a recogerlo o confirmar el servicio."
             
         crear_notificacion(
@@ -1050,3 +1109,48 @@ def enviar_mensaje_chat(
         nombre_usuario=nombre_remitente,
         rol_usuario=rol_remitente,
     )
+
+@router.patch("/{incidente_id}/estado", response_model=IncidenteDetalle)
+def actualizar_estado_incidente(
+    incidente_id: int,
+    payload: ActualizarEstadoIncidente,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Permite actualizar el estado de un incidente y retransmitir la actualización."""
+    incidente = db.query(Incidente).options(joinedload(Incidente.evidencias), joinedload(Incidente.taller), joinedload(Incidente.analisis_ia)).filter(Incidente.id == incidente_id).first()
+    if not incidente:
+        raise HTTPException(status_code=404, detail="Incidente no encontrado")
+
+    incidente.estado = payload.nuevo_estado
+    db.commit()
+    db.refresh(incidente)
+
+    # Notificar al conductor
+    if incidente.vehiculoconductor and incidente.vehiculoconductor.conductor:
+        crear_notificacion(
+            db,
+            incidente.vehiculoconductor.conductor.IdUsuario,
+            "Estado Actualizado",
+            f"Tu incidente #{incidente.id} cambió de estado a: {payload.nuevo_estado}"
+        )
+
+    # Broadcast via WS a la sala del incidente
+    background_tasks.add_task(
+        broadcast_ws_event,
+        incidente.tenant_id,
+        f"incidente_{incidente.id}",
+        {"action": "estado_actualizado", "incidente_id": incidente.id, "estado": incidente.estado, "lat": payload.lat, "lng": payload.lng}
+    )
+    
+    # Broadcast general al tenant para el dashboard
+    if incidente.tenant_id is not None:
+        background_tasks.add_task(
+            broadcast_ws_event,
+            incidente.tenant_id,
+            "talleres",
+            {"action": "estado_actualizado", "incidente_id": incidente.id, "estado": incidente.estado}
+        )
+
+    return incidente

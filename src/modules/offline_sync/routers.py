@@ -53,7 +53,7 @@ def sincronizar_incidentes(
             # 1. Crear el incidente
             nuevo_incidente = Incidente(
                 coordenadagps=item.coordenadagps,
-                estado="Reportado",
+                estado="pendiente",
                 fecha=item.fecha,
                 vehiculoconductor_id=vc_id,
                 tenant_id=tenant_id

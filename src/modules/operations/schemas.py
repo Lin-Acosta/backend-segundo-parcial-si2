@@ -166,3 +166,8 @@ class MensajeChatOut(BaseModel):
     rol_usuario: str
     class Config:
         from_attributes = True
+
+class ActualizarEstadoIncidente(BaseModel):
+    nuevo_estado: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None

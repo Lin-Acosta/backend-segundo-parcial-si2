@@ -72,8 +72,8 @@ def get_taller_stats(
     return {
         "resumen": {
             "total_incidentes": sum(estado_dict.values()),
-            "resueltos": estado_dict.get("Resuelto", 0) + estado_dict.get("Pagado", 0),
-            "pendientes": estado_dict.get("Asignado", 0) + estado_dict.get("En Camino", 0),
+            "resueltos": estado_dict.get("finalizado", 0) + estado_dict.get("finalizado", 0),
+            "pendientes": estado_dict.get("taller asignado", 0) + estado_dict.get("en camino", 0),
             "ingresos_totales": total_ingresos,
             "balance_plataforma": taller.balance
         },

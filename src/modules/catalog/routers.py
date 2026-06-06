@@ -248,6 +248,13 @@ def get_my_profile(
             estado=mecanico.estado
         )
 
+    from src.modules.saas.models import Tenant
+    tenant_nombre = None
+    if current_user.tenant_id:
+        t_obj = db.query(Tenant).filter(Tenant.Id == current_user.tenant_id).first()
+        if t_obj:
+            tenant_nombre = t_obj.Nombre
+
     return ProfileOut(
         Id=current_user.Id,
         Correo=current_user.Correo,
@@ -260,7 +267,8 @@ def get_my_profile(
         administrador=admin_data,
         taller=taller_data,
         conductor=conductor_data,
-        mecanico=mecanico_data
+        mecanico=mecanico_data,
+        tenant_nombre=tenant_nombre
     )
 
 @profile_router.put("/me", response_model=ProfileOut)

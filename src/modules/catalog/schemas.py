@@ -139,6 +139,7 @@ class ProfileOut(BaseModel):
     taller: Optional[TallerProfileData] = None
     conductor: Optional[ConductorProfileData] = None
     mecanico: Optional[MecanicoProfileData] = None
+    tenant_nombre: Optional[str] = None
     class Config:
         from_attributes = True
 

@@ -44,7 +44,7 @@ def create_stripe_checkout(
     if not incidente:
         raise HTTPException(status_code=404, detail="Incidente no encontrado.")
     
-    if incidente.estado != "Resuelto":
+    if incidente.estado != "finalizado":
         raise HTTPException(status_code=400, detail="El incidente aún no está resuelto.")
 
     # Obtener monto de la cotización aceptada
@@ -118,7 +118,7 @@ def pago_directo(
     if not incidente:
         raise HTTPException(status_code=404, detail="Incidente no encontrado.")
     
-    if incidente.estado != "Resuelto":
+    if incidente.estado != "finalizado":
         raise HTTPException(status_code=400, detail="El incidente aún no está resuelto.")
 
     cotizacion = db.query(Cotizacion).filter(
@@ -151,7 +151,7 @@ def pago_directo(
     )
     db.add(nuevo_pago)
     
-    # El incidente se queda en "Resuelto" hasta que el taller confirme
+    # El incidente se queda en "finalizado" hasta que el taller confirme
     db.commit()
     db.refresh(nuevo_pago)
     
@@ -206,7 +206,7 @@ def confirmar_pago_directo(
     taller.balance = (taller.balance or 0) - comision
 
     # Marcar incidente como Pagado
-    incidente.estado = "Pagado"
+    incidente.estado = "finalizado"
 
     db.commit()
     db.refresh(pago)
@@ -258,7 +258,7 @@ def confirmar_pago_stripe(
             
             incidente = db.query(Incidente).filter(Incidente.id == pago.incidente_id).first()
             if incidente:
-                incidente.estado = "Pagado"
+                incidente.estado = "finalizado"
                 taller = db.query(Taller).filter(Taller.Id == incidente.taller_id).first()
                 if taller:
                     taller.balance = (taller.balance or 0) + monto_taller
@@ -306,7 +306,7 @@ def stripe_success_page(
                 pago.estado = "Completado"
                 incidente = db.query(Incidente).filter(Incidente.id == pago.incidente_id).first()
                 if incidente:
-                    incidente.estado = "Pagado"
+                    incidente.estado = "finalizado"
                     taller = db.query(Taller).filter(Taller.Id == incidente.taller_id).first()
                     if taller:
                         monto_taller = int(pago.monto_total * 0.90)

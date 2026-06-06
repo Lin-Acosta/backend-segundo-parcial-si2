@@ -39,7 +39,17 @@ def get_or_create(db, model, defaults=None, **filters):
 
 
 def seed_roles_and_permissions(db) -> Dict[str, Rol]:
-    permisos = ["Gestionar Mecanicos", "Gestionar Usuarios", "Gestionar Roles"]
+    permisos = [
+        "Ver Operaciones",
+        "Ver Reportes",
+        "Gestionar Mecanicos",
+        "Ver Usuarios",
+        "Gestionar Roles",
+        "Ver Bitacora",
+        "Gestionar Tenants",
+        "Gestionar Planes",
+        "Ver Analytics"
+    ]
     permiso_objs = {}
     for nombre in permisos:
         permiso, _ = get_or_create(db, Permiso, Nombre=nombre)
@@ -50,20 +60,26 @@ def seed_roles_and_permissions(db) -> Dict[str, Rol]:
         rol, _ = get_or_create(db, Rol, Nombre=nombre)
         roles[nombre] = rol
 
-    # Asignar permisos basicos
-    gestionar_mecanicos = permiso_objs["Gestionar Mecanicos"]
-    gestionar_usuarios = permiso_objs["Gestionar Usuarios"]
-    gestionar_roles = permiso_objs["Gestionar Roles"]
+    # Asignar permisos según la matriz
     
-    if gestionar_mecanicos not in roles["Taller"].permisos:
-        roles["Taller"].permisos.append(gestionar_mecanicos)
+    # 1. Mecanico
+    if permiso_objs["Ver Operaciones"] not in roles["Mecanico"].permisos:
+        roles["Mecanico"].permisos.append(permiso_objs["Ver Operaciones"])
         
-    if gestionar_mecanicos not in roles["Administrador"].permisos:
-        roles["Administrador"].permisos.append(gestionar_mecanicos)
-    if gestionar_usuarios not in roles["Administrador"].permisos:
-        roles["Administrador"].permisos.append(gestionar_usuarios)
-    if gestionar_roles not in roles["Administrador"].permisos:
-        roles["Administrador"].permisos.append(gestionar_roles)
+    # 2. Taller
+    for p in ["Ver Operaciones", "Ver Reportes", "Gestionar Mecanicos"]:
+        if permiso_objs[p] not in roles["Taller"].permisos:
+            roles["Taller"].permisos.append(permiso_objs[p])
+
+    # 3. Admin Tenant
+    for p in ["Ver Operaciones", "Ver Reportes", "Gestionar Mecanicos", "Ver Usuarios", "Gestionar Roles", "Ver Bitacora", "Ver Analytics"]:
+        if permiso_objs[p] not in roles["Admin Tenant"].permisos:
+            roles["Admin Tenant"].permisos.append(permiso_objs[p])
+
+    # 4. Administrador (Super Admin)
+    for p in ["Ver Usuarios", "Gestionar Roles", "Ver Bitacora", "Gestionar Tenants", "Gestionar Planes", "Ver Analytics"]:
+        if permiso_objs[p] not in roles["Administrador"].permisos:
+            roles["Administrador"].permisos.append(permiso_objs[p])
         
     db.commit()
 
@@ -109,38 +125,44 @@ def seed_users(db, roles: Dict[str, Rol], tenant1: Tenant, tenant2: Tenant) -> D
         },
         {
             "key": "user1",
-            "Correo": "user1@demo.local",
+            "Correo": "conductor1@demo.local",
             "Password": "User123!",
             "Nombre": "Juan",
             "Apellidos": "Perez",
             "CI": "1111111",
             "Fechanac": datetime.date(1990, 1, 1),
-            "roles_tenants": [
-                {"rol": roles["Conductor"], "tenant": tenant1},
-                {"rol": roles["Mecanico"], "tenant": tenant2}
-            ]
+            "roles_tenants": [] # Conductor puro global
         },
         {
             "key": "user2",
-            "Correo": "user2@demo.local",
+            "Correo": "conductor2@demo.local",
             "Password": "User123!",
             "Nombre": "Maria",
             "Apellidos": "Gomez",
             "CI": "2222222",
             "Fechanac": datetime.date(1992, 2, 2),
-            "roles_tenants": [
-                {"rol": roles["Taller"], "tenant": tenant1},
-                {"rol": roles["Conductor"], "tenant": tenant2}
-            ]
+            "roles_tenants": [] # Conductor puro global
         },
         {
             "key": "user3",
-            "Correo": "user3@demo.local",
+            "Correo": "taller1@demo.local",
             "Password": "User123!",
             "Nombre": "Carlos",
             "Apellidos": "Taller",
             "CI": "3333333",
             "Fechanac": datetime.date(1985, 3, 3),
+            "roles_tenants": [
+                {"rol": roles["Taller"], "tenant": tenant1}
+            ]
+        },
+        {
+            "key": "user4",
+            "Correo": "taller2@demo.local",
+            "Password": "User123!",
+            "Nombre": "Luis",
+            "Apellidos": "Taller Dos",
+            "CI": "5555555",
+            "Fechanac": datetime.date(1986, 3, 3),
             "roles_tenants": [
                 {"rol": roles["Taller"], "tenant": tenant2}
             ]
@@ -221,23 +243,23 @@ def seed_profiles(db, users: Dict[str, Usuario], tenant1: Tenant, tenant2: Tenan
         db.commit()
         db.refresh(conductor1)
         
-    mecanico2 = db.query(Mecanico).filter(Mecanico.id == user1.Id).first()
-    if not mecanico2:
-        mecanico2 = Mecanico(
-            id=user1.Id,
-            estado="Disponible",
-            tenant_id=tenant2.Id,
-        )
-        db.add(mecanico2)
-        db.commit()
-        db.refresh(mecanico2)
-
     user2 = users["user2"]
+        
+    conductor2 = db.query(Conductor).filter(Conductor.IdUsuario == user2.Id).first()
+    if not conductor2:
+        conductor2 = Conductor(
+            IdUsuario=user2.Id
+        )
+        db.add(conductor2)
+        db.commit()
+        db.refresh(conductor2)
+
+    user3 = users["user3"]
     
-    taller1 = db.query(Taller).filter(Taller.IdUsuario == user2.Id).first()
+    taller1 = db.query(Taller).filter(Taller.IdUsuario == user3.Id).first()
     if not taller1:
         taller1 = Taller(
-            IdUsuario=user2.Id,
+            IdUsuario=user3.Id,
             Nombre="Taller Alpha",
             Direccion="Av. Alpha 123",
             Coordenadas="-16.5,-68.15",
@@ -249,15 +271,18 @@ def seed_profiles(db, users: Dict[str, Usuario], tenant1: Tenant, tenant2: Tenan
         db.add(taller1)
         db.commit()
         db.refresh(taller1)
-        
-    conductor2 = db.query(Conductor).filter(Conductor.IdUsuario == user2.Id).first()
-    if not conductor2:
-        conductor2 = Conductor(
-            IdUsuario=user2.Id
+
+    user4 = users["user4"]
+    mecanico1 = db.query(Mecanico).filter(Mecanico.id == user4.Id).first()
+    if not mecanico1:
+        mecanico1 = Mecanico(
+            id=user4.Id,
+            estado="Disponible",
+            taller_id=taller1.Id,
+            tenant_id=tenant1.Id,
         )
-        db.add(conductor2)
+        db.add(mecanico1)
         db.commit()
-        db.refresh(conductor2)
         
     user3 = users["user3"]
     taller2 = db.query(Taller).filter(Taller.Nombre == "Taller Beta").first()
@@ -276,9 +301,6 @@ def seed_profiles(db, users: Dict[str, Usuario], tenant1: Tenant, tenant2: Tenan
         db.commit()
         db.refresh(taller2)
         
-    if mecanico2.taller_id is None:
-        mecanico2.taller_id = taller2.Id
-        db.commit()
 
     servicio_t1 = db.query(ServicioTaller).filter(ServicioTaller.taller_id == taller1.Id).first()
     if not servicio_t1:
@@ -294,7 +316,7 @@ def seed_profiles(db, users: Dict[str, Usuario], tenant1: Tenant, tenant2: Tenan
 
     return {
         "conductor1": conductor1,
-        "mecanico2": mecanico2,
+        "mecanico1": mecanico1,
         "taller1": taller1,
         "conductor2": conductor2,
         "taller2": taller2
@@ -333,23 +355,23 @@ def seed_vehiculos(db, conductor1: Conductor, conductor2: Conductor, tenant1: Te
     return relacion1, relacion2
 
 
-def seed_incidentes(db, rel1, rel2, taller1, taller2, mecanico2, tenant1, tenant2):
+def seed_incidentes(db, rel1, rel2, taller1, taller2, mecanico1, tenant1, tenant2):
     fecha_pago = "2026-05-24 12:00:00"
     
     incidente1 = db.query(Incidente).filter(Incidente.vehiculoconductor_id == rel1.id, Incidente.fecha == fecha_pago).first()
     if not incidente1:
-        incidente1 = Incidente(coordenadagps="-16.5,-68.15", estado="Reportado", fecha=fecha_pago, vehiculoconductor_id=rel1.id, taller_id=taller1.Id, tenant_id=tenant1.Id)
+        incidente1 = Incidente(coordenadagps="-16.5,-68.15", estado="pendiente", fecha=fecha_pago, vehiculoconductor_id=rel1.id, taller_id=taller1.Id, tenant_id=tenant1.Id)
         db.add(incidente1)
         db.commit()
 
     incidente2 = db.query(Incidente).filter(Incidente.vehiculoconductor_id == rel2.id, Incidente.fecha == fecha_pago).first()
     if not incidente2:
-        incidente2 = Incidente(coordenadagps="-16.51,-68.16", estado="Reportado", fecha=fecha_pago, vehiculoconductor_id=rel2.id, taller_id=taller2.Id, tenant_id=tenant2.Id)
+        incidente2 = Incidente(coordenadagps="-16.51,-68.16", estado="taller asignado", fecha=fecha_pago, vehiculoconductor_id=rel2.id, taller_id=taller2.Id, tenant_id=tenant2.Id)
         db.add(incidente2)
         db.commit()
         db.refresh(incidente2)
-        if mecanico2 not in incidente2.mecanicos:
-            incidente2.mecanicos.append(mecanico2)
+        if mecanico1 not in incidente2.mecanicos:
+            incidente2.mecanicos.append(mecanico1)
             db.commit()
 
 
@@ -363,7 +385,7 @@ def main():
         users = seed_users(db, roles, tenant1, tenant2)
         profiles = seed_profiles(db, users, tenant1, tenant2)
         rel1, rel2 = seed_vehiculos(db, profiles["conductor1"], profiles["conductor2"], tenant1, tenant2)
-        seed_incidentes(db, rel1, rel2, profiles["taller1"], profiles["taller2"], profiles["mecanico2"], tenant1, tenant2)
+        seed_incidentes(db, rel1, rel2, profiles["taller1"], profiles["taller2"], profiles["mecanico1"], tenant1, tenant2)
         print("Seed completado exitosamente con 2 tenants y usuarios compartidos!")
     finally:
         db.close()

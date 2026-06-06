@@ -27,4 +27,10 @@ class ConnectionManager:
             for connection in self.active_connections[tenant_id][room_id]:
                 await connection.send_json(message)
 
+    async def broadcast_all_tenants(self, message: dict, room_id: str):
+        for tenant_id in self.active_connections:
+            if room_id in self.active_connections[tenant_id]:
+                for connection in self.active_connections[tenant_id][room_id]:
+                    await connection.send_json(message)
+
 manager = ConnectionManager()
