@@ -4,8 +4,8 @@ from typing import Dict, Tuple
 from src.core.database import Base, SessionLocal, engine
 from src.core.security import get_password_hash
 
-from src.modules.iam.models import Permiso, Rol, Usuario
-from src.modules.saas.models import Tenant
+from src.modules.iam.models import Permiso, Rol, Usuario, UsuarioTenant
+from src.modules.saas.models import Tenant, PlanSaaS, Suscripcion
 from src.modules.catalog.models import (
     Administrador,
     Conductor,
@@ -19,9 +19,9 @@ from src.modules.operations.models import (
     Evidencia,
     Incidente,
     MensajeChat,
+    AnalisisIA,
+    Bitacora, Cotizacion, Notificacion, Pago
 )
-from src.modules.operations.models import AnalisisIA
-from src.modules.operations.models import Bitacora, Cotizacion, Notificacion, Pago
 
 
 def get_or_create(db, model, defaults=None, **filters):
@@ -39,32 +39,61 @@ def get_or_create(db, model, defaults=None, **filters):
 
 
 def seed_roles_and_permissions(db) -> Dict[str, Rol]:
-    permisos = ["Gestionar Mecanicos"]
+    permisos = ["Gestionar Mecanicos", "Gestionar Usuarios", "Gestionar Roles"]
     permiso_objs = {}
     for nombre in permisos:
         permiso, _ = get_or_create(db, Permiso, Nombre=nombre)
         permiso_objs[nombre] = permiso
 
     roles = {}
-    for nombre in ["Administrador", "Taller", "Conductor", "Mecanico"]:
+    for nombre in ["Administrador", "Admin Tenant", "Taller", "Conductor", "Mecanico"]:
         rol, _ = get_or_create(db, Rol, Nombre=nombre)
         roles[nombre] = rol
 
     # Asignar permisos basicos
     gestionar_mecanicos = permiso_objs["Gestionar Mecanicos"]
+    gestionar_usuarios = permiso_objs["Gestionar Usuarios"]
+    gestionar_roles = permiso_objs["Gestionar Roles"]
+    
     if gestionar_mecanicos not in roles["Taller"].permisos:
         roles["Taller"].permisos.append(gestionar_mecanicos)
+        
     if gestionar_mecanicos not in roles["Administrador"].permisos:
         roles["Administrador"].permisos.append(gestionar_mecanicos)
+    if gestionar_usuarios not in roles["Administrador"].permisos:
+        roles["Administrador"].permisos.append(gestionar_usuarios)
+    if gestionar_roles not in roles["Administrador"].permisos:
+        roles["Administrador"].permisos.append(gestionar_roles)
+        
     db.commit()
 
     return roles
 
-def seed_tenant(db) -> Tenant:
-    tenant, _ = get_or_create(db, Tenant, Nombre="Empresa Demo SaaS", SuscripcionActiva=1, Dominio="demo.saas.com")
-    return tenant
 
-def seed_users(db, roles: Dict[str, Rol], tenant: Tenant) -> Dict[str, Usuario]:
+def seed_planes(db):
+    planes = [
+        {"Nombre": "Básico", "PrecioMensual": 0, "MaxUsuarios": 5, "MaxIncidentes": 50, "Descripcion": "Plan gratuito básico.", "StripePriceId": None},
+        {"Nombre": "Pro", "PrecioMensual": 2900, "MaxUsuarios": 20, "MaxIncidentes": 500, "Descripcion": "Para talleres en crecimiento.", "StripePriceId": "price_mock_pro"},
+        {"Nombre": "Premium", "PrecioMensual": 9900, "MaxUsuarios": 100, "MaxIncidentes": 5000, "Descripcion": "Para redes sin límites.", "StripePriceId": "price_mock_premium"},
+    ]
+    for p in planes:
+        get_or_create(db, PlanSaaS, **p)
+
+    return db.query(PlanSaaS).filter(PlanSaaS.Nombre == "Básico").first()
+
+def seed_tenants(db, plan_basico) -> Tuple[Tenant, Tenant]:
+    tenant1, created1 = get_or_create(db, Tenant, Nombre="Empresa Alpha SaaS", SuscripcionActiva=1, Dominio="alpha.saas.com")
+    tenant2, created2 = get_or_create(db, Tenant, Nombre="Empresa Beta SaaS", SuscripcionActiva=1, Dominio="beta.saas.com")
+    
+    if created1:
+        s1, _ = get_or_create(db, Suscripcion, tenant_id=tenant1.Id, plan_id=plan_basico.Id, Estado="Activa")
+    if created2:
+        s2, _ = get_or_create(db, Suscripcion, tenant_id=tenant2.Id, plan_id=plan_basico.Id, Estado="Activa")
+
+    return tenant1, tenant2
+
+
+def seed_users(db, roles: Dict[str, Rol], tenant1: Tenant, tenant2: Tenant) -> Dict[str, Usuario]:
     users = {}
 
     seed_users_data = [
@@ -72,332 +101,270 @@ def seed_users(db, roles: Dict[str, Rol], tenant: Tenant) -> Dict[str, Usuario]:
             "key": "admin",
             "Correo": "admin@demo.local",
             "Password": "Admin123!",
-            "IdRol": roles["Administrador"].Id,
-            "tenant_id": None
+            "Nombre": "Admin",
+            "Apellidos": "Super",
+            "CI": "0000000",
+            "Fechanac": datetime.date(1980, 1, 1),
+            "roles_tenants": []
         },
         {
-            "key": "taller",
-            "Correo": "taller@demo.local",
-            "Password": "Taller123!",
-            "IdRol": roles["Taller"].Id,
-            "tenant_id": tenant.Id
+            "key": "user1",
+            "Correo": "user1@demo.local",
+            "Password": "User123!",
+            "Nombre": "Juan",
+            "Apellidos": "Perez",
+            "CI": "1111111",
+            "Fechanac": datetime.date(1990, 1, 1),
+            "roles_tenants": [
+                {"rol": roles["Conductor"], "tenant": tenant1},
+                {"rol": roles["Mecanico"], "tenant": tenant2}
+            ]
         },
         {
-            "key": "conductor",
-            "Correo": "conductor@demo.local",
-            "Password": "Conductor123!",
-            "IdRol": roles["Conductor"].Id,
-            "tenant_id": tenant.Id
+            "key": "user2",
+            "Correo": "user2@demo.local",
+            "Password": "User123!",
+            "Nombre": "Maria",
+            "Apellidos": "Gomez",
+            "CI": "2222222",
+            "Fechanac": datetime.date(1992, 2, 2),
+            "roles_tenants": [
+                {"rol": roles["Taller"], "tenant": tenant1},
+                {"rol": roles["Conductor"], "tenant": tenant2}
+            ]
         },
         {
-            "key": "mecanico",
-            "Correo": "mecanico@demo.local",
-            "Password": "Mecanico123!",
-            "IdRol": roles["Mecanico"].Id,
-            "tenant_id": tenant.Id
+            "key": "user3",
+            "Correo": "user3@demo.local",
+            "Password": "User123!",
+            "Nombre": "Carlos",
+            "Apellidos": "Taller",
+            "CI": "3333333",
+            "Fechanac": datetime.date(1985, 3, 3),
+            "roles_tenants": [
+                {"rol": roles["Taller"], "tenant": tenant2}
+            ]
+        },
+        {
+            "key": "owner1",
+            "Correo": "owner1@demo.local",
+            "Password": "User123!",
+            "Nombre": "Laura",
+            "Apellidos": "Dueña",
+            "CI": "4444444",
+            "Fechanac": datetime.date(1988, 4, 4),
+            "roles_tenants": [
+                {"rol": roles["Admin Tenant"], "tenant": tenant1}
+            ]
         },
     ]
 
     for data in seed_users_data:
         existing = db.query(Usuario).filter(Usuario.Correo == data["Correo"]).first()
-        if existing:
-            users[data["key"]] = existing
-            continue
-        hashed = get_password_hash(data["Password"])
-        user = Usuario(Correo=data["Correo"], Password=hashed, IdRol=data["IdRol"], tenant_id=data["tenant_id"])
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        users[data["key"]] = user
+        if not existing:
+            hashed = get_password_hash(data["Password"])
+            user = Usuario(
+                Correo=data["Correo"], 
+                Password=hashed,
+                Nombre=data["Nombre"],
+                Apellidos=data["Apellidos"],
+                CI=data["CI"],
+                Fechanac=data["Fechanac"]
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            existing = user
+        
+        users[data["key"]] = existing
+
+        for rt in data["roles_tenants"]:
+            existing_membership = db.query(UsuarioTenant).filter(
+                UsuarioTenant.usuario_id == existing.Id,
+                UsuarioTenant.tenant_id == rt["tenant"].Id
+            ).first()
+            if not existing_membership:
+                membership = UsuarioTenant(
+                    usuario_id=existing.Id,
+                    tenant_id=rt["tenant"].Id,
+                    rol_id=rt["rol"].Id
+                )
+                db.add(membership)
+                db.commit()
 
     return users
 
 
-def seed_profiles(db, users: Dict[str, Usuario], tenant: Tenant) -> Dict[str, Tuple]:
-    # Administrador
-    admin_user = users["admin"]
-    admin_profile = db.query(Administrador).filter(Administrador.IdUsuario == admin_user.Id).first()
+def seed_profiles(db, users: Dict[str, Usuario], tenant1: Tenant, tenant2: Tenant):
+    admin = users["admin"]
+    admin_profile = db.query(Administrador).filter(Administrador.IdUsuario == admin.Id).first()
     if not admin_profile:
-        admin_profile = Administrador(IdUsuario=admin_user.Id, Usuario="admin")
+        admin_profile = Administrador(IdUsuario=admin.Id, Usuario="admin")
         db.add(admin_profile)
         db.commit()
 
-    # Taller
-    taller_user = users["taller"]
-    taller = db.query(Taller).filter(Taller.IdUsuario == taller_user.Id).first()
-    if not taller:
-        taller = Taller(
-            IdUsuario=taller_user.Id,
-            Nombre="Taller Central",
-            Direccion="Av. Principal 123",
+    owner1 = users["owner1"]
+    owner1_profile = db.query(Administrador).filter(Administrador.IdUsuario == owner1.Id).first()
+    if not owner1_profile:
+        owner1_profile = Administrador(IdUsuario=owner1.Id, Usuario="LauraTenant")
+        db.add(owner1_profile)
+        db.commit()
+
+    user1 = users["user1"]
+    
+    conductor1 = db.query(Conductor).filter(Conductor.IdUsuario == user1.Id).first()
+    if not conductor1:
+        conductor1 = Conductor(
+            IdUsuario=user1.Id
+        )
+        db.add(conductor1)
+        db.commit()
+        db.refresh(conductor1)
+        
+    mecanico2 = db.query(Mecanico).filter(Mecanico.id == user1.Id).first()
+    if not mecanico2:
+        mecanico2 = Mecanico(
+            id=user1.Id,
+            estado="Disponible",
+            tenant_id=tenant2.Id,
+        )
+        db.add(mecanico2)
+        db.commit()
+        db.refresh(mecanico2)
+
+    user2 = users["user2"]
+    
+    taller1 = db.query(Taller).filter(Taller.IdUsuario == user2.Id).first()
+    if not taller1:
+        taller1 = Taller(
+            IdUsuario=user2.Id,
+            Nombre="Taller Alpha",
+            Direccion="Av. Alpha 123",
             Coordenadas="-16.5,-68.15",
             Cap=2,
             Capmax=5,
             balance=0,
-            tenant_id=tenant.Id,
+            tenant_id=tenant1.Id,
         )
-        db.add(taller)
+        db.add(taller1)
         db.commit()
-        db.refresh(taller)
-
-    # Conductor
-    conductor_user = users["conductor"]
-    conductor = db.query(Conductor).filter(Conductor.IdUsuario == conductor_user.Id).first()
-    if not conductor:
-        conductor = Conductor(
-            IdUsuario=conductor_user.Id,
-            CI="12345678",
-            Nombre="Juan",
-            Apellidos="Perez",
-            Fechanac=datetime.date(1995, 1, 15),
-            tenant_id=tenant.Id,
+        db.refresh(taller1)
+        
+    conductor2 = db.query(Conductor).filter(Conductor.IdUsuario == user2.Id).first()
+    if not conductor2:
+        conductor2 = Conductor(
+            IdUsuario=user2.Id
         )
-        db.add(conductor)
+        db.add(conductor2)
         db.commit()
-        db.refresh(conductor)
-
-    # Mecanico
-    mecanico_user = users["mecanico"]
-    mecanico = db.query(Mecanico).filter(Mecanico.id == mecanico_user.Id).first()
-    if not mecanico:
-        mecanico = Mecanico(
-            id=mecanico_user.Id,
-            ci=987654,
-            extci="LP",
-            nombre="Luis",
-            apellidos="Gomez",
-            fechanac=int(datetime.datetime(1990, 5, 20).timestamp() * 1000),
-            estado="Disponible",
-            taller_id=taller.Id,
-            tenant_id=tenant.Id,
+        db.refresh(conductor2)
+        
+    user3 = users["user3"]
+    taller2 = db.query(Taller).filter(Taller.Nombre == "Taller Beta").first()
+    if not taller2:
+        taller2 = Taller(
+            IdUsuario=user3.Id,
+            Nombre="Taller Beta",
+            Direccion="Av. Beta 456",
+            Coordenadas="-16.51,-68.16",
+            Cap=2,
+            Capmax=5,
+            balance=0,
+            tenant_id=tenant2.Id,
         )
-        db.add(mecanico)
+        db.add(taller2)
         db.commit()
-        db.refresh(mecanico)
+        db.refresh(taller2)
+        
+    if mecanico2.taller_id is None:
+        mecanico2.taller_id = taller2.Id
+        db.commit()
 
-    # Servicio de Taller
-    servicio = db.query(ServicioTaller).filter(
-        ServicioTaller.taller_id == taller.Id,
-        ServicioTaller.nombre == "Mantenimiento General",
-    ).first()
-    if not servicio:
-        servicio = ServicioTaller(nombre="Mantenimiento General", taller_id=taller.Id)
-        db.add(servicio)
+    servicio_t1 = db.query(ServicioTaller).filter(ServicioTaller.taller_id == taller1.Id).first()
+    if not servicio_t1:
+        servicio_t1 = ServicioTaller(nombre="Mantenimiento General Alpha", taller_id=taller1.Id)
+        db.add(servicio_t1)
         db.commit()
-        db.refresh(servicio)
+
+    servicio_t2 = db.query(ServicioTaller).filter(ServicioTaller.taller_id == taller2.Id).first()
+    if not servicio_t2:
+        servicio_t2 = ServicioTaller(nombre="Mantenimiento General Beta", taller_id=taller2.Id)
+        db.add(servicio_t2)
+        db.commit()
 
     return {
-        "admin": admin_profile,
-        "taller": taller,
-        "conductor": conductor,
-        "mecanico": mecanico,
-        "servicio": servicio,
+        "conductor1": conductor1,
+        "mecanico2": mecanico2,
+        "taller1": taller1,
+        "conductor2": conductor2,
+        "taller2": taller2
     }
 
 
-def seed_vehiculos(db, conductor: Conductor, tenant: Tenant) -> VehiculoConductor:
-    vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == "ABC-123").first()
-    if not vehiculo:
-        vehiculo = Vehiculo(
-            Marca="Toyota",
-            Modelo="Corolla",
-            Placa="ABC-123",
-            Poliza="POL-0001",
-            Categoria="Sedan",
-            Año=2020,
-            tenant_id=tenant.Id,
-        )
-        db.add(vehiculo)
+def seed_vehiculos(db, conductor1: Conductor, conductor2: Conductor, tenant1: Tenant, tenant2: Tenant):
+    vehiculo1 = db.query(Vehiculo).filter(Vehiculo.Placa == "AAA-111").first()
+    if not vehiculo1:
+        vehiculo1 = Vehiculo(Marca="Toyota", Modelo="Yaris", Placa="AAA-111")
+        db.add(vehiculo1)
         db.commit()
-        db.refresh(vehiculo)
-
-    relacion = db.query(VehiculoConductor).filter(
-        VehiculoConductor.conductor_id == conductor.IdUsuario,
-        VehiculoConductor.vehiculo_id == vehiculo.Id,
-    ).first()
-    if not relacion:
-        relacion = VehiculoConductor(
-            fechareg=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            conductor_id=conductor.IdUsuario,
-            vehiculo_id=vehiculo.Id,
-        )
-        db.add(relacion)
+        db.refresh(vehiculo1)
+        
+    relacion1 = db.query(VehiculoConductor).filter(VehiculoConductor.conductor_id == conductor1.IdUsuario, VehiculoConductor.vehiculo_id == vehiculo1.Id).first()
+    if not relacion1:
+        relacion1 = VehiculoConductor(fechareg=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), conductor_id=conductor1.IdUsuario, vehiculo_id=vehiculo1.Id)
+        db.add(relacion1)
         db.commit()
-        db.refresh(relacion)
+        db.refresh(relacion1)
 
-    return relacion
+    vehiculo2 = db.query(Vehiculo).filter(Vehiculo.Placa == "BBB-222").first()
+    if not vehiculo2:
+        vehiculo2 = Vehiculo(Marca="Nissan", Modelo="Sentra", Placa="BBB-222")
+        db.add(vehiculo2)
+        db.commit()
+        db.refresh(vehiculo2)
+
+    relacion2 = db.query(VehiculoConductor).filter(VehiculoConductor.conductor_id == conductor2.IdUsuario, VehiculoConductor.vehiculo_id == vehiculo2.Id).first()
+    if not relacion2:
+        relacion2 = VehiculoConductor(fechareg=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), conductor_id=conductor2.IdUsuario, vehiculo_id=vehiculo2.Id)
+        db.add(relacion2)
+        db.commit()
+        db.refresh(relacion2)
+
+    return relacion1, relacion2
 
 
-def seed_incidentes(db, vc: VehiculoConductor, taller: Taller, mecanico: Mecanico, conductor_user: Usuario, tenant: Tenant):
+def seed_incidentes(db, rel1, rel2, taller1, taller2, mecanico2, tenant1, tenant2):
     fecha_pago = "2026-05-24 12:00:00"
-    incidente_pagado = db.query(Incidente).filter(
-        Incidente.vehiculoconductor_id == vc.id,
-        Incidente.fecha == fecha_pago,
-    ).first()
-    if not incidente_pagado:
-        incidente_pagado = Incidente(
-            coordenadagps="-16.5,-68.15",
-            estado="Pagado",
-            fecha=fecha_pago,
-            vehiculoconductor_id=vc.id,
-            taller_id=taller.Id,
-            tenant_id=tenant.Id,
-        )
-        db.add(incidente_pagado)
-        db.commit()
-        db.refresh(incidente_pagado)
-
-    evidencia = db.query(Evidencia).filter(Evidencia.incidente_id == incidente_pagado.id).first()
-    if not evidencia:
-        evidencia = Evidencia(
-            audio=None,
-            descripcion="Auto no enciende, requiere revision",
-            fotos=None,
-            incidente_id=incidente_pagado.id,
-        )
-        db.add(evidencia)
+    
+    incidente1 = db.query(Incidente).filter(Incidente.vehiculoconductor_id == rel1.id, Incidente.fecha == fecha_pago).first()
+    if not incidente1:
+        incidente1 = Incidente(coordenadagps="-16.5,-68.15", estado="Reportado", fecha=fecha_pago, vehiculoconductor_id=rel1.id, taller_id=taller1.Id, tenant_id=tenant1.Id)
+        db.add(incidente1)
         db.commit()
 
-    analisis = db.query(AnalisisIA).filter(AnalisisIA.incidente_id == incidente_pagado.id).first()
-    if not analisis:
-        analisis = AnalisisIA(
-            incidente_id=incidente_pagado.id,
-            Clasificacion="Mecanico",
-            NivelPrioridad="Media",
-            Resumen="Posible falla de bateria",
-            TranscripcionAudio=None,
-            informacion_valida=True,
-        )
-        db.add(analisis)
+    incidente2 = db.query(Incidente).filter(Incidente.vehiculoconductor_id == rel2.id, Incidente.fecha == fecha_pago).first()
+    if not incidente2:
+        incidente2 = Incidente(coordenadagps="-16.51,-68.16", estado="Reportado", fecha=fecha_pago, vehiculoconductor_id=rel2.id, taller_id=taller2.Id, tenant_id=tenant2.Id)
+        db.add(incidente2)
         db.commit()
-
-    if mecanico not in incidente_pagado.mecanicos:
-        incidente_pagado.mecanicos.append(mecanico)
-        db.commit()
-
-    cotizacion = db.query(Cotizacion).filter(
-        Cotizacion.incidente_id == incidente_pagado.id,
-        Cotizacion.taller_id == taller.Id,
-    ).first()
-    if not cotizacion:
-        cotizacion = Cotizacion(
-            monto=350,
-            mensaje="Cambio de bateria",
-            estado="Aceptada",
-            fecha_creacion=fecha_pago,
-            incidente_id=incidente_pagado.id,
-            taller_id=taller.Id,
-            tenant_id=tenant.Id,
-        )
-        db.add(cotizacion)
-        db.commit()
-
-    pago = db.query(Pago).filter(Pago.incidente_id == incidente_pagado.id).first()
-    if not pago:
-        pago = Pago(
-            monto_total=350,
-            metodo="Directo",
-            estado="Completado",
-            stripe_session_id=None,
-            fecha=fecha_pago,
-            incidente_id=incidente_pagado.id,
-            tenant_id=tenant.Id,
-        )
-        db.add(pago)
-        db.commit()
-
-    mensaje = db.query(MensajeChat).filter(
-        MensajeChat.incidente_id == incidente_pagado.id,
-        MensajeChat.contenido == "Estoy en camino al taller",
-    ).first()
-    if not mensaje:
-        mensaje = MensajeChat(
-            contenido="Estoy en camino al taller",
-            fecha=fecha_pago,
-            incidente_id=incidente_pagado.id,
-            usuario_id=conductor_user.Id,
-        )
-        db.add(mensaje)
-        db.commit()
-
-    # Incidente pendiente para pruebas de solicitudes
-    fecha_pendiente = "2026-05-24 12:30:00"
-    incidente_pendiente = db.query(Incidente).filter(
-        Incidente.vehiculoconductor_id == vc.id,
-        Incidente.fecha == fecha_pendiente,
-    ).first()
-    if not incidente_pendiente:
-        incidente_pendiente = Incidente(
-            coordenadagps="-16.51,-68.14",
-            estado="Reportado",
-            fecha=fecha_pendiente,
-            vehiculoconductor_id=vc.id,
-            taller_id=None,
-            tenant_id=tenant.Id,
-        )
-        db.add(incidente_pendiente)
-        db.commit()
-        db.refresh(incidente_pendiente)
-
-    evidencia_p = db.query(Evidencia).filter(Evidencia.incidente_id == incidente_pendiente.id).first()
-    if not evidencia_p:
-        evidencia_p = Evidencia(
-            audio=None,
-            descripcion="Pinchazo de llanta",
-            fotos=None,
-            incidente_id=incidente_pendiente.id,
-        )
-        db.add(evidencia_p)
-        db.commit()
-
-    return incidente_pagado, incidente_pendiente
-
-
-def seed_ops(db, admin_user: Usuario, conductor_user: Usuario, tenant: Tenant):
-    bitacora = db.query(Bitacora).filter(
-        Bitacora.usuario_id == admin_user.Id,
-        Bitacora.accion == "Seeder",
-    ).first()
-    if not bitacora:
-        bitacora = Bitacora(
-            accion="Seeder",
-            descripcion="Carga inicial de datos",
-            fecha=datetime.date.today(),
-            ip="127.0.0.1",
-            usuario_id=admin_user.Id,
-            tenant_id=tenant.Id,
-        )
-        db.add(bitacora)
-        db.commit()
-
-    notificacion = db.query(Notificacion).filter(
-        Notificacion.usuario_id == conductor_user.Id,
-        Notificacion.titulo == "Bienvenido",
-    ).first()
-    if not notificacion:
-        notificacion = Notificacion(
-            descripcion="Cuenta lista para pruebas",
-            estado="No leida",
-            fecha=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            titulo="Bienvenido",
-            usuario_id=conductor_user.Id,
-            tenant_id=tenant.Id,
-        )
-        db.add(notificacion)
-        db.commit()
+        db.refresh(incidente2)
+        if mecanico2 not in incidente2.mecanicos:
+            incidente2.mecanicos.append(mecanico2)
+            db.commit()
 
 
 def main():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        tenant = seed_tenant(db)
+        plan_basico = seed_planes(db)
+        tenant1, tenant2 = seed_tenants(db, plan_basico)
         roles = seed_roles_and_permissions(db)
-        users = seed_users(db, roles, tenant)
-        profiles = seed_profiles(db, users, tenant)
-        vc = seed_vehiculos(db, profiles["conductor"], tenant)
-        seed_incidentes(db, vc, profiles["taller"], profiles["mecanico"], users["conductor"], tenant)
-        seed_ops(db, users["admin"], users["conductor"], tenant)
+        users = seed_users(db, roles, tenant1, tenant2)
+        profiles = seed_profiles(db, users, tenant1, tenant2)
+        rel1, rel2 = seed_vehiculos(db, profiles["conductor1"], profiles["conductor2"], tenant1, tenant2)
+        seed_incidentes(db, rel1, rel2, profiles["taller1"], profiles["taller2"], profiles["mecanico2"], tenant1, tenant2)
+        print("Seed completado exitosamente con 2 tenants y usuarios compartidos!")
     finally:
         db.close()
 

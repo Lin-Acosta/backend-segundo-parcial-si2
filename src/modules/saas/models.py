@@ -13,9 +13,10 @@ class Tenant(Base):
     SuscripcionActiva = Column(Integer, default=1)  # 1 = Activa, 0 = Inactiva
     Dominio = Column(String(255), nullable=True)
     LogoUrl = Column(String(500), nullable=True)
+    StripeCustomerId = Column(String(255), nullable=True)
     CreatedAt = Column(DateTime, default=datetime.utcnow)
 
-    usuarios = relationship("Usuario", back_populates="tenant")
+    usuario_tenants = relationship("UsuarioTenant", back_populates="tenant", cascade="all, delete-orphan")
     suscripciones = relationship("Suscripcion", back_populates="tenant")
 
 
@@ -29,6 +30,7 @@ class PlanSaaS(Base):
     MaxUsuarios = Column(Integer, nullable=False, default=10)
     MaxIncidentes = Column(Integer, nullable=False, default=100)
     Descripcion = Column(Text, nullable=True)
+    StripePriceId = Column(String(255), nullable=True)
     Activo = Column(Boolean, default=True)
 
     suscripciones = relationship("Suscripcion", back_populates="plan")

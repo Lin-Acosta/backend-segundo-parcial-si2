@@ -76,10 +76,16 @@ def get_bitacora(
             .all()
         )
 
-    # Enriquecer con datos del usuario
     result = []
+    from src.modules.iam.models import UsuarioTenant
     for entry in entries:
         usuario = db.query(Usuario).filter(Usuario.Id == entry.usuario_id).first()
+        rol_nombre = "Sin Rol"
+        if usuario:
+            membership = db.query(UsuarioTenant).filter(UsuarioTenant.usuario_id == usuario.Id).first()
+            if membership and membership.rol:
+                rol_nombre = membership.rol.Nombre
+                
         result.append(BitacoraOut(
             id=entry.id,
             accion=entry.accion,
@@ -88,7 +94,7 @@ def get_bitacora(
             ip=entry.ip,
             usuario_id=entry.usuario_id,
             usuario_correo=usuario.Correo if usuario else "Eliminado",
-            usuario_rol=usuario.rol.Nombre if usuario and usuario.rol else "Sin Rol"
+            usuario_rol=rol_nombre
         ))
     return result
 

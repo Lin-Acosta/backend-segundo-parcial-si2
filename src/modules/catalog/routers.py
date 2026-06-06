@@ -1,19 +1,22 @@
 from src.core.database import get_db
 from src.modules.iam.dependencies import get_current_user
-from src.core.security import get_password_hash
-from src.shared.bitacora_util import registrar_bitacora
-from src.modules.iam.models import Rol, Usuario
+from src.core.security import get_password_hash, verify_password
+from src.shared.bitacora_util import registrar_bitacora, registrar_bitacora_background
+from src.modules.iam.models import Rol, Usuario, UsuarioTenant
 from src.modules.catalog.models import Mecanico, Taller, Vehiculo, VehiculoConductor, Administrador, Conductor
 from src.modules.catalog.schemas import (
     MecanicoOut, MecanicoRegistro, MecanicoUpdate,
     Vehiculo as VehiculoSchema, VehiculoCreate,
-    ProfileOut, ProfileUpdate, AdminProfileData, ConductorProfileData, MecanicoProfileData, TallerProfileData, UbicacionUpdate
+    ProfileOut, ProfileUpdate, AdminProfileData, ConductorProfileData, MecanicoProfileData, TallerProfileData, UbicacionUpdate, PasswordChange
 )
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 import datetime
+import os
+import shutil
+import uuid
 
 # ─── VEHÍCULOS ───────────────────────────────────────────────────────────────
 
@@ -33,7 +36,7 @@ def registrar_vehiculo(
     
     db_vehiculo = None
     if vehiculo.Placa:
-        db_vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == vehiculo.Placa, Vehiculo.tenant_id == current_user.tenant_id).first()
+        db_vehiculo = db.query(Vehiculo).filter(Vehiculo.Placa == vehiculo.Placa).first()
     
     if db_vehiculo:
         if current_user.conductor not in db_vehiculo.conductores:
@@ -45,7 +48,6 @@ def registrar_vehiculo(
         return db_vehiculo
 
     nuevo_vehiculo_data = vehiculo.model_dump() if hasattr(vehiculo, 'model_dump') else vehiculo.dict()
-    nuevo_vehiculo_data["tenant_id"] = current_user.tenant_id
     db_vehiculo = Vehiculo(**nuevo_vehiculo_data)
     db.add(db_vehiculo)
     db.commit()
@@ -91,7 +93,7 @@ def get_mecanicos_by_taller(db: Session = Depends(get_db), current_user: Usuario
         raise HTTPException(status_code=403, detail="No autorizado para visualizar mecánicos")
 
 @mecanicos_router.post("/", response_model=MecanicoOut, status_code=status.HTTP_201_CREATED)
-def create_mecanico(request: Request, mecanico_data: MecanicoRegistro, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+def create_mecanico(request: Request, background_tasks: BackgroundTasks, mecanico_data: MecanicoRegistro, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     taller = db.query(Taller).filter(Taller.IdUsuario == current_user.Id).first()
     if not taller:
         raise HTTPException(status_code=403, detail="Debe ser un Taller registrado para crear mecánicos")
@@ -107,18 +109,31 @@ def create_mecanico(request: Request, mecanico_data: MecanicoRegistro, db: Sessi
         db.refresh(rol)
 
     hashed_pass = get_password_hash(mecanico_data.password)
-    new_user = Usuario(Correo=mecanico_data.correo, Password=hashed_pass, IdRol=rol.Id, tenant_id=current_user.tenant_id)
+    new_user = Usuario(
+        Correo=mecanico_data.correo, 
+        Password=hashed_pass,
+        Nombre=mecanico_data.nombre,
+        Apellidos=mecanico_data.apellidos,
+        CI=mecanico_data.ci,
+        Fechanac=mecanico_data.fechanac
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
+    # Crear membresía en el tenant actual
+    if current_user.tenant_id is not None:
+        membership = UsuarioTenant(
+            usuario_id=new_user.Id,
+            tenant_id=current_user.tenant_id,
+            rol_id=rol.Id
+        )
+        db.add(membership)
+        db.commit()
+
     nuevo_mecanico = Mecanico(
         id=new_user.Id,
-        ci=mecanico_data.ci,
-        extci=mecanico_data.extci,
-        nombre=mecanico_data.nombre,
-        apellidos=mecanico_data.apellidos,
-        fechanac=mecanico_data.fechanac,
+        estado=mecanico_data.estado,
         taller_id=taller.Id,
         tenant_id=current_user.tenant_id
     )
@@ -126,15 +141,16 @@ def create_mecanico(request: Request, mecanico_data: MecanicoRegistro, db: Sessi
     db.commit()
     db.refresh(nuevo_mecanico)
 
-    registrar_bitacora(
-        db, current_user.Id, "Crear Mecánico",
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Crear Mecánico",
         f"Registró al mecánico {mecanico_data.nombre} {mecanico_data.apellidos}",
-        ip=request.client.host if request.client else "0.0.0.0"
+        request.client.host if request.client else "0.0.0.0"
     )
     return nuevo_mecanico
 
 @mecanicos_router.put("/{mecanico_id}", response_model=MecanicoOut)
-def update_mecanico(request: Request, mecanico_id: int, m_update: MecanicoUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+def update_mecanico(request: Request, background_tasks: BackgroundTasks, mecanico_id: int, m_update: MecanicoUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     mecanico = db.query(Mecanico).filter(Mecanico.id == mecanico_id).first()
     if not mecanico:
         raise HTTPException(status_code=404, detail="Mecánico no encontrado")
@@ -147,31 +163,22 @@ def update_mecanico(request: Request, mecanico_id: int, m_update: MecanicoUpdate
     if not (is_owner_taller or is_admin or is_self):
         raise HTTPException(status_code=403, detail="No puedes editar mecánicos de otros talleres")
 
-    if m_update.nombre is not None:
-        mecanico.nombre = m_update.nombre
-    if m_update.apellidos is not None:
-        mecanico.apellidos = m_update.apellidos
-    if m_update.ci is not None:
-        mecanico.ci = m_update.ci
-    if m_update.extci is not None:
-        mecanico.extci = m_update.extci
-    if m_update.fechanac is not None:
-        mecanico.fechanac = m_update.fechanac
     if m_update.estado is not None:
         mecanico.estado = m_update.estado
 
     db.commit()
     db.refresh(mecanico)
 
-    registrar_bitacora(
-        db, current_user.Id, "Editar Mecánico",
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Editar Mecánico",
         f"Editó al mecánico #{mecanico_id}",
-        ip=request.client.host if request.client else "0.0.0.0"
+        request.client.host if request.client else "0.0.0.0"
     )
     return mecanico
 
 @mecanicos_router.delete("/{mecanico_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_mecanico(request: Request, mecanico_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+def delete_mecanico(request: Request, background_tasks: BackgroundTasks, mecanico_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     mecanico = db.query(Mecanico).filter(Mecanico.id == mecanico_id).first()
     if not mecanico:
         raise HTTPException(status_code=404, detail="Mecánico no encontrado")
@@ -190,10 +197,11 @@ def delete_mecanico(request: Request, mecanico_id: int, db: Session = Depends(ge
 
     db.commit()
 
-    registrar_bitacora(
-        db, current_user.Id, "Eliminar Mecánico",
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Eliminar Mecánico",
         f"Dio de baja al mecánico #{mecanico_id}",
-        ip=request.client.host if request.client else "0.0.0.0"
+        request.client.host if request.client else "0.0.0.0"
     )
     return None
 
@@ -217,39 +225,38 @@ def get_my_profile(
     if current_user.administrador:
         admin_data = AdminProfileData(Usuario=current_user.administrador.Usuario)
 
-    if current_user.talleres and len(current_user.talleres) > 0:
-        t = current_user.talleres[0]
+    taller = db.query(Taller).filter(Taller.IdUsuario == current_user.Id, Taller.tenant_id == current_user.tenant_id).first()
+    if taller:
         taller_data = TallerProfileData(
-            Id=t.Id,
-            Nombre=t.Nombre,
-            Direccion=t.Direccion,
-            Coordenadas=t.Coordenadas,
-            Cap=t.Cap,
-            Capmax=t.Capmax,
-            balance=t.balance
+            Id=taller.Id,
+            Nombre=taller.Nombre,
+            Direccion=taller.Direccion,
+            Coordenadas=taller.Coordenadas,
+            Cap=taller.Cap,
+            Capmax=taller.Capmax,
+            balance=taller.balance
         )
 
-    if current_user.conductor:
-        conductor_data = ConductorProfileData(
-            CI=current_user.conductor.CI,
-            Nombre=current_user.conductor.Nombre,
-            Apellidos=current_user.conductor.Apellidos,
-            Fechanac=current_user.conductor.Fechanac
-        )
+    conductor = db.query(Conductor).filter(Conductor.IdUsuario == current_user.Id).first()
+    if conductor:
+        conductor_data = ConductorProfileData()
 
-    if current_user.mecanico:
+    mecanico = db.query(Mecanico).filter(Mecanico.id == current_user.Id, Mecanico.tenant_id == current_user.tenant_id).first()
+    if mecanico:
         mecanico_data = MecanicoProfileData(
-            id=current_user.mecanico.id,
-            ci=current_user.mecanico.ci,
-            nombre=current_user.mecanico.nombre,
-            apellidos=current_user.mecanico.apellidos,
-            estado=current_user.mecanico.estado
+            id=mecanico.id,
+            estado=mecanico.estado
         )
 
     return ProfileOut(
         Id=current_user.Id,
         Correo=current_user.Correo,
+        Nombre=current_user.Nombre,
+        Apellidos=current_user.Apellidos,
+        CI=current_user.CI,
+        Fechanac=current_user.Fechanac,
         rol_nombre=rol_nombre,
+        FotoPerfil=current_user.FotoPerfil,
         administrador=admin_data,
         taller=taller_data,
         conductor=conductor_data,
@@ -259,6 +266,7 @@ def get_my_profile(
 @profile_router.put("/me", response_model=ProfileOut)
 def update_my_profile(
     request: Request,
+    background_tasks: BackgroundTasks,
     profile_data: ProfileUpdate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
@@ -278,8 +286,17 @@ def update_my_profile(
     if current_user.administrador and profile_data.admin_usuario is not None:
         current_user.administrador.Usuario = profile_data.admin_usuario
 
-    if current_user.talleres and len(current_user.talleres) > 0:
-        t = current_user.talleres[0]
+    if profile_data.Nombre is not None:
+        current_user.Nombre = profile_data.Nombre
+    if profile_data.Apellidos is not None:
+        current_user.Apellidos = profile_data.Apellidos
+    if profile_data.CI is not None:
+        current_user.CI = profile_data.CI
+    if profile_data.Fechanac is not None:
+        current_user.Fechanac = profile_data.Fechanac
+
+    t = db.query(Taller).filter(Taller.IdUsuario == current_user.Id, Taller.tenant_id == current_user.tenant_id).first()
+    if t:
         if profile_data.taller_nombre is not None:
             t.Nombre = profile_data.taller_nombre
         if profile_data.taller_direccion is not None:
@@ -291,27 +308,19 @@ def update_my_profile(
         if profile_data.taller_capmax is not None:
             t.Capmax = profile_data.taller_capmax
 
-    if current_user.conductor:
-        if profile_data.conductor_ci is not None:
-            current_user.conductor.CI = profile_data.conductor_ci
-        if profile_data.conductor_nombre is not None:
-            current_user.conductor.Nombre = profile_data.conductor_nombre
-        if profile_data.conductor_apellidos is not None:
-            current_user.conductor.Apellidos = profile_data.conductor_apellidos
-        if profile_data.conductor_fechanac is not None:
-            current_user.conductor.Fechanac = profile_data.conductor_fechanac
-
-    if current_user.mecanico:
+    m = db.query(Mecanico).filter(Mecanico.id == current_user.Id, Mecanico.tenant_id == current_user.tenant_id).first()
+    if m:
         if profile_data.mecanico_estado is not None:
-            current_user.mecanico.estado = profile_data.mecanico_estado
+            m.estado = profile_data.mecanico_estado
 
     db.commit()
     db.refresh(current_user)
 
-    registrar_bitacora(
-        db, current_user.Id, "Editar Perfil",
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Editar Perfil",
         f"El usuario {current_user.Correo} actualizó su perfil",
-        ip=request.client.host if request.client else "0.0.0.0"
+        request.client.host if request.client else "0.0.0.0"
     )
 
     return get_my_profile(db=db, current_user=current_user)
@@ -319,6 +328,7 @@ def update_my_profile(
 @profile_router.put("/me/ubicacion", response_model=ProfileOut)
 def update_ubicacion_taller(
     request: Request,
+    background_tasks: BackgroundTasks,
     ubicacion: UbicacionUpdate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
@@ -337,10 +347,101 @@ def update_ubicacion_taller(
     db.commit()
     db.refresh(current_user)
 
-    registrar_bitacora(
-        db, current_user.Id, "Actualizar Ubicación",
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Actualizar Ubicación",
         f"El taller '{taller.Nombre}' actualizó su ubicación a {ubicacion.Coordenadas}",
-        ip=request.client.host if request.client else "0.0.0.0"
+        request.client.host if request.client else "0.0.0.0"
     )
 
     return get_my_profile(db=db, current_user=current_user)
+
+@profile_router.put("/me/password", response_model=dict)
+def update_my_password(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    password_data: PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if not verify_password(password_data.contrasena_actual, current_user.Password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña actual es incorrecta")
+
+    current_user.Password = get_password_hash(password_data.nueva_contrasena)
+    db.commit()
+
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Cambio de Contraseña",
+        f"El usuario {current_user.Correo} cambió su contraseña",
+        request.client.host if request.client else "0.0.0.0"
+    )
+
+    return {"message": "Contraseña actualizada exitosamente"}
+
+@profile_router.post("/me/avatar", response_model=ProfileOut)
+def upload_avatar(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser una imagen")
+
+    os.makedirs("uploads/avatars", exist_ok=True)
+    file_extension = file.filename.split(".")[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = os.path.join("uploads", "avatars", unique_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    if current_user.FotoPerfil and os.path.exists(current_user.FotoPerfil):
+        try:
+            os.remove(current_user.FotoPerfil)
+        except Exception:
+            pass
+
+    current_user.FotoPerfil = file_path.replace("\\", "/")
+    db.commit()
+    db.refresh(current_user)
+
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        current_user.Id, "Actualizar Avatar",
+        f"El usuario {current_user.Correo} actualizó su foto de perfil",
+        request.client.host if request.client else "0.0.0.0"
+    )
+
+    return get_my_profile(db=db, current_user=current_user)
+
+@profile_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_my_account(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    if current_user.rol and current_user.rol.Nombre == 'Administrador':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Un administrador no puede eliminar su propia cuenta desde aquí")
+
+    correo_eliminado = current_user.Correo
+    user_id = current_user.Id
+
+    db.query(Conductor).filter(Conductor.IdUsuario == user_id).delete()
+    db.query(Taller).filter(Taller.IdUsuario == user_id).delete()
+    db.query(Mecanico).filter(Mecanico.id == user_id).delete()
+
+    db.delete(current_user)
+    db.commit()
+
+    background_tasks.add_task(
+        registrar_bitacora_background,
+        user_id, "Eliminar Cuenta",
+        f"El usuario {correo_eliminado} eliminó su propia cuenta",
+        request.client.host if request.client else "0.0.0.0"
+    )
+
+    return None

@@ -66,3 +66,26 @@ class SuscripcionOut(SuscripcionBase):
 
     class Config:
         from_attributes = True
+
+# ── Registro ──────────────────────────────────────────────────────────────────
+
+class TenantRegistrationRequest(BaseModel):
+    admin_correo: str
+    admin_password: str
+    admin_nombre: Optional[str] = None
+    admin_apellidos: Optional[str] = None
+    tenant_nombre: str
+    plan_id: int
+    extra_usuarios: Optional[int] = 0
+    extra_incidentes: Optional[int] = 0
+
+class CheckoutSessionResponse(BaseModel):
+    checkout_url: Optional[str] = None
+    message: str
+    tenant_id: int
+
+class UpgradeCheckoutRequest(BaseModel):
+    plan_id: int
+
+class PortalSessionResponse(BaseModel):
+    portal_url: str

@@ -43,11 +43,6 @@ class Conductor(Base):
     __tablename__ = 'Conductor'
     
     IdUsuario = Column(Integer, ForeignKey('Usuario.Id'), primary_key=True)
-    CI = Column(String(50), nullable=False)
-    Nombre = Column(String(255), nullable=False)
-    Apellidos = Column(String(255), nullable=False)
-    Fechanac = Column(Date, nullable=False)
-    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario", back_populates="conductor")
     vehiculos = relationship("Vehiculo", secondary="VehiculoConductor", back_populates="conductores")
@@ -64,7 +59,6 @@ class Vehiculo(Base):
     Poliza = Column(String(100))
     Categoria = Column(String(100))
     Año = Column(Integer)
-    tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
     conductores = relationship("Conductor", secondary="VehiculoConductor", back_populates="vehiculos")
     vehiculo_conductores = relationship("VehiculoConductor", back_populates="vehiculo")
 
@@ -86,11 +80,6 @@ class Mecanico(Base):
     __tablename__ = 'Mecanico'
     
     id = Column(Integer, ForeignKey('Usuario.Id', ondelete="CASCADE"), primary_key=True)
-    ci = Column(Integer, nullable=False)
-    extci = Column(String(2))
-    nombre = Column(String(255), nullable=False)
-    apellidos = Column(String(255), nullable=False)
-    fechanac = Column(BigInteger)
     estado = Column(String(50), default="Disponible")
     taller_id = Column(Integer, ForeignKey('Taller.Id', ondelete="SET NULL"), nullable=True)
     tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)

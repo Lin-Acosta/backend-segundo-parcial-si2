@@ -65,8 +65,13 @@ def crear_notificacion(db: Session, usuario_id: int, titulo: str, descripcion: s
     """
     fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    from src.modules.iam.models import UsuarioTenant
     usuario = db.query(Usuario).filter(Usuario.Id == usuario_id).first()
-    tenant_id = usuario.tenant_id if usuario else None
+    
+    tenant_id = None
+    if usuario:
+        membership = db.query(UsuarioTenant).filter(UsuarioTenant.usuario_id == usuario.Id).first()
+        tenant_id = membership.tenant_id if membership else None
 
     nueva_notificacion = Notificacion(
         titulo=titulo,

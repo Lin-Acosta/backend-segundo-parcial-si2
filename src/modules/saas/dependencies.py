@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 
 def get_current_tenant_id(current_user: Usuario = Depends(get_current_user)) -> int:
-    """Extrae el tenant_id del usuario autenticado. Lanza 403 si no tiene tenant."""
+    """Extrae el tenant_id del usuario autenticado (inyectado desde el JWT). Lanza 403 si no tiene tenant."""
     if current_user.tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -34,15 +34,17 @@ def require_active_subscription(
 
 
 def require_super_admin(current_user: Usuario = Depends(get_current_user)):
-    """Solo permite acceso a usuarios sin tenant_id (administradores de plataforma)."""
+    """Solo permite acceso a usuarios sin tenant_id (administradores de plataforma).
+    Un super admin es un usuario que no está asociado a ningún tenant en su sesión actual."""
     if current_user.tenant_id is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso restringido a administradores de plataforma."
         )
-    if not current_user.rol or current_user.rol.Nombre != "Administrador":
+    # Verificar que el usuario realmente no tiene tenants (es super admin)
+    if current_user.tenants and len(current_user.tenants) > 0:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Se requieren permisos de Administrador de plataforma."
+            detail="Acceso restringido a administradores de plataforma."
         )
     return current_user

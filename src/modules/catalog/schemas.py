@@ -5,14 +5,15 @@ from typing import Optional, List
 # ── Conductor ─────────────────────────────────────────────────────────────────
 
 class ConductorBase(BaseModel):
-    CI: str
-    Nombre: str
-    Apellidos: str
-    Fechanac: date
+    pass
 
-class ConductorRegistro(ConductorBase):
+class ConductorRegistro(BaseModel):
     Correo: str
     Password: str
+    Nombre: str
+    Apellidos: str
+    CI: str
+    Fechanac: date
 
 class ConductorOut(ConductorBase):
     IdUsuario: int
@@ -31,6 +32,7 @@ class TallerBase(BaseModel):
 class TallerRegistro(TallerBase):
     Correo: str
     Password: str
+    tenant_id: int
 
 class TallerOut(TallerBase):
     Id: int
@@ -75,23 +77,18 @@ class Vehiculo(VehiculoBase):
 # ── Mecanico ──────────────────────────────────────────────────────────────────
 
 class MecanicoBase(BaseModel):
-    ci: int
-    extci: Optional[str] = None
-    nombre: str
-    apellidos: str
-    fechanac: Optional[int] = None
     estado: Optional[str] = "Disponible"
 
 class MecanicoRegistro(MecanicoBase):
     correo: str
     password: str
+    nombre: str
+    apellidos: str
+    ci: str
+    extci: Optional[str] = None
+    fechanac: Optional[date] = None
 
 class MecanicoUpdate(BaseModel):
-    ci: Optional[int] = None
-    extci: Optional[str] = None
-    nombre: Optional[str] = None
-    apellidos: Optional[str] = None
-    fechanac: Optional[int] = None
     estado: Optional[str] = None
 
 class MecanicoOut(MecanicoBase):
@@ -119,18 +116,12 @@ class TallerProfileData(BaseModel):
         from_attributes = True
 
 class ConductorProfileData(BaseModel):
-    CI: str
-    Nombre: str
-    Apellidos: str
-    Fechanac: date
+    pass
     class Config:
         from_attributes = True
 
 class MecanicoProfileData(BaseModel):
     id: int
-    ci: int
-    nombre: str
-    apellidos: str
     estado: str
     class Config:
         from_attributes = True
@@ -138,7 +129,12 @@ class MecanicoProfileData(BaseModel):
 class ProfileOut(BaseModel):
     Id: int
     Correo: str
+    Nombre: Optional[str] = None
+    Apellidos: Optional[str] = None
+    CI: Optional[str] = None
+    Fechanac: Optional[date] = None
     rol_nombre: Optional[str] = None
+    FotoPerfil: Optional[str] = None
     administrador: Optional[AdminProfileData] = None
     taller: Optional[TallerProfileData] = None
     conductor: Optional[ConductorProfileData] = None
@@ -149,18 +145,22 @@ class ProfileOut(BaseModel):
 class ProfileUpdate(BaseModel):
     Correo: Optional[str] = None
     Password: Optional[str] = None
+    Nombre: Optional[str] = None
+    Apellidos: Optional[str] = None
+    CI: Optional[str] = None
+    Fechanac: Optional[date] = None
     admin_usuario: Optional[str] = None
     taller_nombre: Optional[str] = None
     taller_direccion: Optional[str] = None
     taller_coordenadas: Optional[str] = None
     taller_cap: Optional[int] = None
     taller_capmax: Optional[int] = None
-    conductor_ci: Optional[str] = None
-    conductor_nombre: Optional[str] = None
-    conductor_apellidos: Optional[str] = None
-    conductor_fechanac: Optional[date] = None
     mecanico_estado: Optional[str] = None
 
 class UbicacionUpdate(BaseModel):
     Coordenadas: str
     Direccion: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    contrasena_actual: str
+    nueva_contrasena: str

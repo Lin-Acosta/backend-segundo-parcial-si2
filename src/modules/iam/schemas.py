@@ -11,6 +11,7 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     correo: Optional[str] = None
     tenant_id: Optional[int] = None
+    rol_id: Optional[int] = None
 
 class PasswordResetRequest(BaseModel):
     correo: str
@@ -21,6 +22,8 @@ class PasswordReset(BaseModel):
 
 class MensajeResponse(BaseModel):
     message: str
+
+# ── Permisos ──────────────────────────────────────────────────────────────────
 
 class PermisoBase(BaseModel):
     Nombre: str
@@ -33,6 +36,8 @@ class Permiso(PermisoBase):
 
     class Config:
         from_attributes = True
+
+# ── Roles ─────────────────────────────────────────────────────────────────────
 
 class RolBase(BaseModel):
     Nombre: str
@@ -47,22 +52,62 @@ class Rol(RolBase):
     class Config:
         from_attributes = True
 
-class UsuarioBase(BaseModel):
-    Correo: str
-    IdRol: int
+# ── Tenant Selection (Login en 2 pasos) ──────────────────────────────────────
 
-class UsuarioCreate(UsuarioBase):
+class TenantOption(BaseModel):
+    """Un tenant disponible para el usuario durante la selección."""
+    id: int
+    nombre: str
+    logo: Optional[str] = None
+    rol: str
+
+    class Config:
+        from_attributes = True
+
+class LoginResponse(BaseModel):
+    """Respuesta unificada del login. Si requires_tenant_selection es True,
+    el frontend debe mostrar la lista de tenants y llamar a /auth/select-tenant."""
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    role: Optional[str] = None
+    permisos: Optional[List[str]] = []
+    tenant_id: Optional[int] = None
+    requires_tenant_selection: bool = False
+    temp_token: Optional[str] = None
+    tenants: Optional[List[TenantOption]] = None
+
+class TenantSelectionPayload(BaseModel):
+    """Payload para seleccionar un tenant después del login."""
+    temp_token: str
+    tenant_id: int
+
+# ── Usuarios ──────────────────────────────────────────────────────────────────
+
+class UsuarioCreate(BaseModel):
+    Correo: str
     Password: str
+    IdRol: int
+    tenant_id: Optional[int] = None
 
 class UsuarioUpdate(BaseModel):
     Correo: Optional[str] = None
     Password: Optional[str] = None
     IdRol: Optional[int] = None
 
-class Usuario(UsuarioBase):
-    Id: int
-    rol: Optional[Rol] = None
+class UsuarioTenantInfo(BaseModel):
+    tenant_id: int
+    tenant_nombre: str
+    rol_id: int
+    rol_nombre: str
 
+    class Config:
+        from_attributes = True
+
+class Usuario(BaseModel):
+    Id: int
+    Correo: str
+    memberships: List[UsuarioTenantInfo] = []
+    
     class Config:
         from_attributes = True
 
