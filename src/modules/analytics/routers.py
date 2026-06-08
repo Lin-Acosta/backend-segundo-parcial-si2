@@ -11,6 +11,7 @@ from src.modules.operations.models import Incidente
 from src.modules.catalog.models import Taller
 from src.modules.operations.models import Pago
 from src.modules.iam.models import Usuario
+from sqlalchemy import or_
 
 router = APIRouter(
     prefix="/reportes",
@@ -214,11 +215,18 @@ def obtener_kpis(
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="El usuario no pertenece a un tenant")
 
-    # Obtener todos los incidentes del tenant actual
+    talleres_ids = [t.Id for t in db.query(Taller).filter(Taller.tenant_id == current_user.tenant_id).all()]
+
+    # Obtener todos los incidentes del tenant actual o atendidos por sus talleres
     incidentes = db.query(Incidente).options(
         joinedload(Incidente.analisis_ia),
         joinedload(Incidente.cotizaciones)
-    ).filter(Incidente.tenant_id == current_user.tenant_id).all()
+    ).filter(
+        or_(
+            Incidente.tenant_id == current_user.tenant_id,
+            Incidente.taller_id.in_(talleres_ids) if talleres_ids else False
+        )
+    ).all()
 
     total_incidentes = len(incidentes)
     if total_incidentes == 0:

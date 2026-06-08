@@ -1,4 +1,5 @@
 from src.core.database import get_db
+from sqlalchemy import or_
 from src.modules.iam.dependencies import get_current_user
 from src.modules.operations.models import Evidencia, Incidente, MensajeChat
 from src.modules.operations.models import AnalisisIA
@@ -65,7 +66,13 @@ def solicitudes_pendientes(
             joinedload(Incidente.analisis_ia),
             joinedload(Incidente.cotizaciones)
         )
-        .filter(Incidente.estado == "pendiente", Incidente.tenant_id == current_user.tenant_id)
+        .filter(
+            Incidente.estado == "pendiente",
+            or_(
+                Incidente.tenant_id == current_user.tenant_id,
+                Incidente.tenant_id == None
+            )
+        )
         .order_by(Incidente.id.desc())
         .all()
     )
@@ -995,11 +1002,9 @@ def _usuario_puede_chatear(incidente: Incidente, user: Usuario) -> bool:
         vc_ids = [vc.id for vc in user.conductor.vehiculo_conductores]
         if incidente.vehiculoconductor_id in vc_ids:
             return True
-    # Es el taller asignado
+    # Permitir a cualquier taller participar en el chat (ej. para negociar cotizaciones)
     if user.talleres:
-        for t in user.talleres:
-            if t.Id == incidente.taller_id:
-                return True
+        return True
     # Es un mecánico asignado al incidente
     if user.mecanico:
         for mec in incidente.mecanicos:
@@ -1085,7 +1090,7 @@ def enviar_mensaje_chat(
     # Conductor
     if incidente.vehiculoconductor and incidente.vehiculoconductor.conductor:
         participantes_ids.add(incidente.vehiculoconductor.conductor.IdUsuario)
-    # Taller
+    # Taller asignado
     if incidente.taller_id:
         taller = db.query(Taller).filter(Taller.Id == incidente.taller_id).first()
         if taller:
@@ -1093,6 +1098,11 @@ def enviar_mensaje_chat(
     # Mecánicos asignados
     for mec in incidente.mecanicos:
         participantes_ids.add(mec.id)
+        
+    # Otros usuarios que hayan chateado en este incidente (para notificar a talleres negociando)
+    historial = db.query(MensajeChat.usuario_id).filter(MensajeChat.incidente_id == incidente_id).distinct().all()
+    for (u_id,) in historial:
+        participantes_ids.add(u_id)
 
     # Quitar al remitente
     participantes_ids.discard(current_user.Id)
