@@ -374,7 +374,11 @@ def talleres_disponibles(
 ):
     """Lista talleres con capacidad disponible, ordenados por recomendación IA y cercanía si se proveen coordenadas."""
     from sqlalchemy.orm import joinedload as jl
-    talleres = db.query(Taller).options(jl(Taller.servicios)).filter(Taller.tenant_id == current_user.tenant_id).all()
+    # Si el conductor es global (sin tenant), mostrar todos los talleres
+    if current_user.tenant_id is not None:
+        talleres = db.query(Taller).options(jl(Taller.servicios)).filter(Taller.tenant_id == current_user.tenant_id).all()
+    else:
+        talleres = db.query(Taller).options(jl(Taller.servicios)).all()
 
     ai_clasificacion = None
     if incidente_id:
@@ -429,9 +433,11 @@ def talleres_disponibles(
             Coordenadas=t.Coordenadas,
             Cap=cap,
             Capmax=capmax,
+            balance=t.balance or 0,
+            IdUsuario=t.IdUsuario,
             distancia_km=distancia,
             recomendado_ia=recomendado,
-            servicios=[ServicioTallerOut(id=s.id, nombre=s.nombre) for s in t.servicios],
+            servicios=[ServicioTallerOut(id=s.id, nombre=s.nombre, taller_id=s.taller_id) for s in t.servicios],
         ))
 
     # Ordenar: primero los recomendados por IA (True antes que False), luego por distancia
@@ -749,6 +755,7 @@ def aceptar_cotizacion(
     # Asignar taller al incidente
     incidente.taller_id = cotizacion.taller_id
     incidente.estado = "taller asignado"
+    incidente.fecha_asignacion = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Incrementar capacidad del taller
     taller = db.query(Taller).filter(Taller.Id == cotizacion.taller_id).first()
@@ -1124,6 +1131,13 @@ def actualizar_estado_incidente(
         raise HTTPException(status_code=404, detail="Incidente no encontrado")
 
     incidente.estado = payload.nuevo_estado
+    fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if payload.nuevo_estado.lower() in ["en camino", "en atención", "en atencion"]:
+        if not incidente.fecha_llegada:
+            incidente.fecha_llegada = fecha_actual
+    elif payload.nuevo_estado.lower() == "resuelto":
+        incidente.fecha_finalizacion = fecha_actual
+
     db.commit()
     db.refresh(incidente)
 

@@ -35,13 +35,17 @@ class ReintentarAnalisisPayload(BaseModel):
 # ── Cotizacion ────────────────────────────────────────────────────────────────
 
 class CotizacionBase(BaseModel):
+    monto: Optional[int] = None
+    mensaje: Optional[str] = None
+    tiempo_estimado: Optional[str] = None
+
+class CotizacionCreate(BaseModel):
+    taller_id: int
+
+class CotizacionOfrecer(BaseModel):
     monto: int
     mensaje: str
-
-class CotizacionCreate(CotizacionBase):
-    pass
-
-CotizacionOfrecer = CotizacionCreate
+    tiempo_estimado: Optional[str] = None
 
 class CotizacionUpdate(BaseModel):
     estado: str

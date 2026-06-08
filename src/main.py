@@ -29,7 +29,7 @@ app.add_middleware(
 
 from src.modules.iam.routers import auth_router, users_router, roles_router
 from src.modules.saas.routers import router as saas_router
-from src.modules.catalog.routers import mecanicos_router, vehiculos_router, profile_router
+from src.modules.catalog.routers import mecanicos_router, vehiculos_router, profile_router, talleres_router
 from src.modules.operations.routers.incidentes import router as incidentes_router
 from src.modules.operations.routers.bitacora import router as bitacora_router
 from src.modules.operations.routers.notificaciones import router as notificaciones_router
@@ -53,6 +53,7 @@ app.include_router(saas_router)
 app.include_router(mecanicos_router)
 app.include_router(vehiculos_router)
 app.include_router(profile_router)
+app.include_router(talleres_router)
 
 # Operations
 app.include_router(incidentes_router)

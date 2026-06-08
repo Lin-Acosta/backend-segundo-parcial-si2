@@ -34,15 +34,16 @@ class TallerRegistro(TallerBase):
     Password: str
     tenant_id: int
 
+class TallerCreateInternal(TallerBase):
+    Correo: str
+    Password: str
+
 class TallerOut(TallerBase):
     Id: int
     balance: int
-    IdUsuario: int
+    IdUsuario: Optional[int] = None
     class Config:
         from_attributes = True
-
-class TallerDisponible(TallerOut):
-    distancia_km: float
 
 class ServicioTallerBase(BaseModel):
     nombre: str
@@ -55,6 +56,11 @@ class ServicioTallerOut(ServicioTallerBase):
     taller_id: int
     class Config:
         from_attributes = True
+
+class TallerDisponible(TallerOut):
+    distancia_km: Optional[float] = None
+    recomendado_ia: bool = False
+    servicios: List[ServicioTallerOut] = []
 
 # ── Vehiculo ──────────────────────────────────────────────────────────────────
 

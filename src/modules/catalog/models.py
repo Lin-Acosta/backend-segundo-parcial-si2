@@ -11,7 +11,7 @@ class Taller(Base):
     Coordenadas = Column(String(255))
     Cap = Column(Integer, default=0)
     Capmax = Column(Integer, default=10)
-    IdUsuario = Column(Integer, ForeignKey('Usuario.Id'), nullable=False)
+    IdUsuario = Column(Integer, ForeignKey('Usuario.Id'), nullable=True)
     tenant_id = Column(Integer, ForeignKey('Tenant.Id', ondelete="CASCADE"), nullable=True)
     balance = Column(Integer, default=0)
 

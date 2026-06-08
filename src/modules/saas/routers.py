@@ -38,6 +38,14 @@ def listar_tenants(
     return db.query(Tenant).all()
 
 
+@router.get("/public-tenants", response_model=List[TenantOut])
+def listar_tenants_publicos(
+    db: Session = Depends(get_db)
+):
+    """Lista los tenants activos para mostrarlos de forma pública (ej. landing page)."""
+    return db.query(Tenant).filter(Tenant.SuscripcionActiva == 1).all()
+
+
 @router.post("/tenants", response_model=TenantOut, status_code=status.HTTP_201_CREATED)
 def crear_tenant(
     payload: TenantCreate,
